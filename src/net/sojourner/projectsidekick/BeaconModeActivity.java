@@ -27,7 +27,8 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 	private BluetoothAdapter _bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 	private IBluetoothBridge _bluetooth = null;
 	
-	private List<KnownDevice>	_discoveredDevices = new ArrayList<KnownDevice>();
+	private List<KnownDevice>	_discoveredDevices 	= new ArrayList<KnownDevice>();
+	private List<KnownDevice>	_broughtDevices 	= new ArrayList<KnownDevice>();
 	private boolean			 	_isActive = false;
 	private String			 	_mode 		= "theft";
 	
@@ -238,30 +239,124 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 		
 		return;
 	}
+	
+	private void addBroughtDevice(String name, String address) {
+		if (_broughtDevices == null) {
+			Logger.err("Brought device list not initialized");
+			return;
+		}
+		
+		/* Check first if this device already exists in our discovered list */
+		for (KnownDevice kd : _broughtDevices) {
+			if (kd.getAddress().equals(address)) {
+				Logger.warn("Device is already in the brought device list");
+				return;
+			}
+		}
+		
+		/* Add it to the discovered list */
+		_broughtDevices.add(new KnownDevice(name,address));
+		
+		return;
+	}
+	
+	private void sendDiscoveredDevices() {
+		if (_discoveredDevices == null) {
+			Logger.err("Discovered device list not initialized");
+			return;
+		}
+		
+		String devices = "";
+		for (KnownDevice kd : _discoveredDevices) {
+			devices += kd.getAddress();
+		}
+		
+		sendData(devices);
+		
+		return;
+	}
+	
+	private void sendBroughtDevices() {
+		if (_broughtDevices == null) {
+			Logger.err("Brought device list not initialized");
+			return;
+		}
+		
+		String devices = "";
+		for (KnownDevice kd : _broughtDevices) {
+			devices += kd.getAddress();
+		}
+		
+		sendData(devices);
+		
+		return;
+	}
+	
+	private void bringDevice(String request) {
+		int iStartIdx = request.indexOf("BRING");
+		if (iStartIdx < 0) {
+			Logger.err("Invalid bring request string");
+			return;
+		}
+		
+		String requestPart[] = request.substring(iStartIdx).split(" ");
+		
+		for (KnownDevice kd : _discoveredDevices) {
+			if (kd.getAddress().equals(requestPart[1])) {
+				addBroughtDevice(kd.getName(), kd.getAddress());
+				return;
+			}
+		}
+		
+		Logger.err("Device not found (might not yet be discovered)");
+		
+		return;
+	}
+	
+	private void leaveDevice(String request) {
+		int iStartIdx = request.indexOf("LEAVE");
+		if (iStartIdx < 0) {
+			Logger.err("Invalid leave request string");
+			return;
+		}
+		
+		String requestPart[] = request.substring(iStartIdx).split(" ");
+		
+		for (KnownDevice kd : _broughtDevices) {
+			if (kd.getAddress().equals(requestPart[1])) {
+				_broughtDevices.remove(kd);
+				return;
+			}
+		}
+		
+		Logger.err("Device not found (might not yet be discovered)");
+		
+		return;
+	}
 
     private void processRequest(byte[] data) {
         String dataStr = new String(data);
 
-        if (dataStr.equals("DISCOVER")) {
+        if (dataStr.contains("DISCOVER")) {
             /* Restart discovery of nearby devices */
         	startDeviceDiscovery();
-        } else if (dataStr.equals("LIST DISCOVERED")) {
+        } else if (dataStr.contains("LIST DISCOVERED")) {
             /* Sends the list of discovered devices (i.e. devices in range) 
              *  back to the client */
-            // TODO
-        } else if (dataStr.equals("LIST BROUGHT")) {
+        	sendDiscoveredDevices();
+        } else if (dataStr.contains("LIST BROUGHT")) {
             /* List the devices which will be "brought" and guarded. Initially 
              *  empty. The beacon can be told to add specific devices to the
              *  bring list but only if it has already discovered them */
-            // TODO
+        	sendBroughtDevices();
         } else if (dataStr.contains("BRING")) {
             /* Tells this beacon to add the device which matches the address
              *  given to the bring list */
-            // TODO
+        	bringDevice(dataStr);
         } else if (dataStr.contains("LEAVE")) {
             /* Tells this beacon to remove the device which matches the address
              *  given from the bring list */
-            // TODO
+        	leaveDevice(dataStr);
         }
 
         return;
