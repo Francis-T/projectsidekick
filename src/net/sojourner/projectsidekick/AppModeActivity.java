@@ -1,11 +1,9 @@
 package net.sojourner.projectsidekick;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import net.sojourner.projectsidekick.ProjectSidekickApp.Mode;
 import net.sojourner.projectsidekick.interfaces.BluetoothEventHandler;
 import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
 import net.sojourner.projectsidekick.types.KnownDevice;
@@ -33,11 +31,11 @@ import android.widget.ListView;
 import android.widget.Toast;
 
 public class AppModeActivity extends ListActivity implements BluetoothEventHandler {
-	private ProjectSidekickApp _app = null;
+	private ProjectSidekickApp _app = (ProjectSidekickApp) getApplication();
 	private BluetoothAdapter _bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 	private IBluetoothBridge _bluetooth = null;
 	
-	private List<KnownDevice> _registeredDevices = new ArrayList<KnownDevice>();
+	//private List<KnownDevice> _registeredDevices = _app.getRegisteredDevices();
 	private ArrayAdapter<KnownDevice> _deviceListAdapter = null;
 	
 	@Override
@@ -61,31 +59,28 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 				@Override
 				public void onItemClick(AdapterView<?> av, View v,
 						int pos, long id) {
-					if (_deviceListAdapter == null) {
-						_deviceListAdapter 
-							= (ArrayAdapter<KnownDevice>) 
-								AppModeActivity.this.getListAdapter();
-					}
-					KnownDevice kd = (KnownDevice) _deviceListAdapter.getItem(pos);
-					
-					Toast.makeText( AppModeActivity.this, 
-									"Connecting to " + 
-									kd.getName() + 
-									"(" + kd.getAddress() + ")", 
-									Toast.LENGTH_SHORT).show();
-					if (connectToDevice(kd.getAddress()) != Status.OK) {
-						return;
-					}
-					
-					KnownDevice rd = findRegisteredDevice(kd.getAddress());
-					if (rd == null) {
-						kd.setRegistered(true);
-						_registeredDevices.add(kd);
-						_deviceListAdapter.notifyDataSetChanged();
-					}
-					
-					
-					return;
+//					if (_deviceListAdapter == null) {
+//						_deviceListAdapter 
+//							= (ArrayAdapter<KnownDevice>) 
+//								AppModeActivity.this.getListAdapter();
+//					}
+//					KnownDevice kd = (KnownDevice) _deviceListAdapter.getItem(pos);
+//					
+//					Toast.makeText( AppModeActivity.this, 
+//									"Connecting to " + 
+//									kd.getName() + 
+//									"(" + kd.getAddress() + ")", 
+//									Toast.LENGTH_SHORT).show();
+//					if (connectToDevice(kd.getAddress()) != Status.OK) {
+//						return;
+//					}
+//					
+//					/* Add registered device upon connect trigger */
+//					kd.setRegistered(true);
+//					_app.addRegisteredDevice(kd);
+//					_deviceListAdapter.notifyDataSetChanged();
+//					
+//					return;
 				}
 			}
 		);
@@ -102,6 +97,8 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 								AppModeActivity.this.getListAdapter();
 					}
 					KnownDevice kd = (KnownDevice) _deviceListAdapter.getItem(pos);
+					// TODO Not checked if null
+					
 //					KnownDevice rd = findRegisteredDevice(kd.getAddress());
 //					if (rd != null) {
 //						kd.setRegistered(false);
@@ -109,7 +106,21 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 //						Logger.warn("Removed device from list instead");
 //						_deviceListAdapter.notifyDataSetChanged();
 //					}
-					showModifyDeviceDialog(kd);
+//					showModifyDeviceDialog(kd);
+					
+					/* Package the device name and address */
+					Bundle extras = new Bundle();
+					extras.putString("DEVICE_NAME", kd.getName());
+					extras.putString("DEVICE_ADDRESS", kd.getAddress());
+					
+					/* Create the intent */
+					Intent intent 
+						= new Intent(AppModeActivity.this, 
+									 AppModeConfigBeaconActivity.class);
+					intent.putExtra("DEVICE_INFO", extras);
+					
+					/* Start the next activity */
+					startActivity(intent);
 					
 					return true;
 				}
@@ -119,7 +130,14 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 		/* Create the adapter for the devices to be listed */
 		_deviceListAdapter = new ArrayAdapter<KnownDevice>(this,android.R.layout.simple_list_item_1);
 		setListAdapter(_deviceListAdapter);
-		restoreRegisteredDevices();
+		
+		if (_app == null) {
+			_app = (ProjectSidekickApp) getApplication();
+		}
+		_app.restoreRegisteredDevices();
+		
+		/* Pre-add the registered devices to our show list */
+		addRegisteredDevicesToList();
 		
 		return;
 	}
@@ -152,14 +170,10 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 
 	@Override
 	protected void onStop() {
-		SharedPreferences prefs = getSharedPreferences("PROJECT_BEACON__1127182", MODE_WORLD_WRITEABLE);
-
-		Set<String> rgdInfoSet = new HashSet<String>();
-		for (KnownDevice rd : _registeredDevices) {
-			Logger.info("Adding " + rd.getName() + " to set");
-			rgdInfoSet.add(rd.getName() + "," + rd.getAddress());
+		/* Save the current list of registered devices */
+		if (_app != null) {
+			_app.saveRegisteredDevices();
 		}
-		prefs.edit().putStringSet("REGISTERED_DVC_LIST", rgdInfoSet).commit();
 		
 		if (_bluetooth != null) {
 			_bluetooth.stopDeviceDiscovery();
@@ -320,16 +334,6 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 			
 		}.execute();
 	}
-	
-	private KnownDevice findRegisteredDevice(String address) {
-		for (KnownDevice kd : _registeredDevices) {
-			if (kd.getAddress().equals(address)) {
-				return kd;
-			}
-		}
-        
-        return null;
-	}
 
 	private void addKnownDevice(String name, String address, boolean isDiscovered) {
 		addKnownDevice(name, address, isDiscovered, false);
@@ -360,26 +364,10 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
         return;
 	}
 	
-	private void restoreRegisteredDevices() {
-		SharedPreferences prefs = getSharedPreferences("PROJECT_BEACON__1127182", MODE_WORLD_WRITEABLE);
-
-		Set<String> rgdInfoSet = prefs.getStringSet("REGISTERED_DVC_LIST", null);
-		if (rgdInfoSet != null) {
-			for (String item : rgdInfoSet) {
-				String deviceInfo[] = item.split(",");
-				if (deviceInfo.length != 2) {
-					continue;
-				}
-				
-				KnownDevice kd = new KnownDevice(deviceInfo[0], deviceInfo[1]);
-				kd.setRegistered(true);
-				
-				_registeredDevices.add(kd);
-			}
-		}
-		
-		for (KnownDevice kd : _registeredDevices) {
-			addKnownDevice(kd.getName(), kd.getAddress(), false, kd.isRegistered());
+	private void addRegisteredDevicesToList() {
+		List<KnownDevice> _devices = _app.getRegisteredDevices();
+		for (KnownDevice kd : _devices) {
+			_deviceListAdapter.add(kd);
 		}
 		
 		return;
@@ -407,13 +395,13 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 			.setNeutralButton("Delete", new DialogInterface.OnClickListener() {
 						@Override
 						public void onClick(DialogInterface dialog, int which) {
-							KnownDevice rd = findRegisteredDevice(fkd.getAddress());
-							if (rd != null) {
-								fkd.setRegistered(false);
-								_registeredDevices.remove(rd);
-								Logger.warn("Removed device from list instead");
-								_deviceListAdapter.notifyDataSetChanged();
+							if (_app.removeRegisteredDevice(fkd.getAddress()) 
+									!= Status.OK) {
+								return;
 							}
+							fkd.setRegistered(false);
+							_deviceListAdapter.notifyDataSetChanged();
+							Logger.warn("Removed device from list");
 							
 							Toast.makeText(AppModeActivity.this, "Deleted!", Toast.LENGTH_SHORT).show();
 						}
@@ -453,12 +441,13 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 							fkd.setName(nameStr);
 							_deviceListAdapter.notifyDataSetChanged();
 
-							KnownDevice rd = findRegisteredDevice(fkd.getAddress());
-							if (rd != null) {
-								rd.setName(nameStr);
+							if (_app.updateRegisteredDevice(fkd) != Status.OK) {
+								Logger.err("Device not registered. Renaming is meaningless.");
+								return;
 							}
 							
 							Toast.makeText(AppModeActivity.this, "Renamed!", Toast.LENGTH_SHORT).show();
+							return;
 						}
 					})
 			.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {

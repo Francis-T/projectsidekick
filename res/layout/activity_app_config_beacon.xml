@@ -1,0 +1,65 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    tools:context="${relativePackage}.${activityClass}" >
+
+    <TextView
+        android:id="@+id/txv_dvc_info_hdr"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Device Info"
+        android:textSize="22sp" />
+
+    <TextView
+        android:id="@+id/txv_dvc_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Name: \nAddress: \nOther Info: \n"
+        android:textSize="26sp"
+        android:layout_marginBottom="10dp" />
+
+    <Button
+        android:id="@+id/btn_connect"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:enabled="true"
+        android:text="Connect to Device" />
+
+    <Button
+        android:id="@+id/btn_rename"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:enabled="false"
+        android:text="Rename Device" />
+
+    <Button
+        android:id="@+id/btn_delete"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:enabled="false"
+        android:text="Delete Device" />
+
+    <Button
+        android:id="@+id/btn_req_discover"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:enabled="false"
+        android:text="Request Device Discovery" />
+
+    <Button
+        android:id="@+id/btn_req_discover_list"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:enabled="false"
+        android:text="List Discovered Devices" />
+
+    <Button
+        android:id="@+id/btn_req_bring_list"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:enabled="false"
+        android:text="List Brought Devices" />
+
+</LinearLayout>

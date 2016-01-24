@@ -29,8 +29,9 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 	
 	private List<KnownDevice>	_discoveredDevices 	= new ArrayList<KnownDevice>();
 	private List<KnownDevice>	_broughtDevices 	= new ArrayList<KnownDevice>();
-	private boolean			 	_isActive = false;
-	private String			 	_mode 		= "theft";
+	private boolean			 	_isActive 			= false;
+	private boolean 			_isDiscovering 		= false;
+	private String			 	_mode 				= "theft";
 	
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -88,6 +89,26 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 				}
 			}
 		);
+		
+		final ImageButton btnSearch
+			= (ImageButton) findViewById(R.id.btn_beacon_discover);
+		btnSearch.setOnClickListener(
+			new View.OnClickListener() {
+				@Override
+				public void onClick(View v) {
+					if (!_isDiscovering) {
+						startDeviceDiscovery();
+						_isDiscovering = true;
+						display("Discovery started");
+					} else {
+						stopDeviceDiscovery();
+						_isDiscovering = false;
+						display("Discovery Stopped");
+					}
+					return;
+				}
+			}
+		);
 
 	}
 
@@ -140,6 +161,11 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 		Logger.info("onActivityResult Finished");
 		return;
 	}
+
+    private void display(String msg) {
+        Toast.makeText( this, msg,  Toast.LENGTH_SHORT).show();
+        return;
+    }
 	
 	private void startBluetooth() {
 		if (_app == null) {
@@ -185,6 +211,20 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 		return;
 	}
 	
+	private void stopDeviceDiscovery() {
+		if (_app == null) {
+			_app = (ProjectSidekickApp) getApplication();
+		}
+		
+		if (_bluetooth == null) {
+			_bluetooth = _app.getBluetoothBridge();
+		}
+		
+		_bluetooth.stopDeviceDiscovery();
+		
+		return;
+	}
+	
 	private void stopBluetooth() {
 		if (_app == null) {
 			_app = (ProjectSidekickApp) getApplication();
@@ -213,11 +253,13 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 			_bluetooth = _app.getBluetoothBridge();
 		}
 		
-		if (_bluetooth.broadcast(msg.getBytes())!= Status.OK) {
+		if (_bluetooth.broadcast(msg.getBytes()) != Status.OK) {
 			Logger.err("Failed to send data");
-			Toast.makeText(BeaconModeActivity.this, "Sent: " + msg, Toast.LENGTH_SHORT).show();
 			return;
 		}
+		Toast.makeText(BeaconModeActivity.this, "Sent: " + msg, Toast.LENGTH_SHORT).show();
+		
+		return;
 	}
 	
 	private void addDiscoveredDevice(String name, String address) {
@@ -266,7 +308,7 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 			return;
 		}
 		
-		String devices = "";
+		String devices = "DISCOVERED ";
 		for (KnownDevice kd : _discoveredDevices) {
 			devices += kd.getAddress();
 		}
@@ -282,7 +324,7 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 			return;
 		}
 		
-		String devices = "";
+		String devices = "BROUGHT ";
 		for (KnownDevice kd : _broughtDevices) {
 			devices += kd.getAddress();
 		}
@@ -337,23 +379,23 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
     private void processRequest(byte[] data) {
         String dataStr = new String(data);
 
-        if (dataStr.contains("DISCOVER")) {
+        if (dataStr.equals("DISCOVER")) {
             /* Restart discovery of nearby devices */
         	startDeviceDiscovery();
-        } else if (dataStr.contains("LIST DISCOVERED")) {
+        } else if (dataStr.equals("LIST DISCOVERED")) {
             /* Sends the list of discovered devices (i.e. devices in range) 
              *  back to the client */
         	sendDiscoveredDevices();
-        } else if (dataStr.contains("LIST BROUGHT")) {
+        } else if (dataStr.equals("LIST BROUGHT")) {
             /* List the devices which will be "brought" and guarded. Initially 
              *  empty. The beacon can be told to add specific devices to the
              *  bring list but only if it has already discovered them */
         	sendBroughtDevices();
-        } else if (dataStr.contains("BRING")) {
+        } else if (dataStr.equals("BRING")) {
             /* Tells this beacon to add the device which matches the address
              *  given to the bring list */
         	bringDevice(dataStr);
-        } else if (dataStr.contains("LEAVE")) {
+        } else if (dataStr.equals("LEAVE")) {
             /* Tells this beacon to remove the device which matches the address
              *  given from the bring list */
         	leaveDevice(dataStr);
@@ -375,6 +417,7 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 //	            	uuidStr += p.getUuid().toString() + " ";
 //	            }
 	            addDiscoveredDevice(device.getName(), device.getAddress());
+	            display("Discovered Device: " + device.getName() + ", " + device.getAddress());
 	        }
 	    }
 	};
@@ -434,6 +477,13 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 			@Override
 			protected void onPostExecute(Void result) {
 				Toast.makeText(BeaconModeActivity.this, "Disconnected!", Toast.LENGTH_SHORT).show();
+				stopBluetooth();
+				if (_isActive) {
+					_isActive = false;
+					Toast.makeText(BeaconModeActivity.this, "Device: OFF", Toast.LENGTH_SHORT).show();
+					ImageButton btnAllowDiscover = (ImageButton) findViewById(R.id.btn_allow_discovery);
+					btnAllowDiscover.setColorFilter(Color.RED);
+				}
 				
 				super.onPostExecute(result);
 			}
