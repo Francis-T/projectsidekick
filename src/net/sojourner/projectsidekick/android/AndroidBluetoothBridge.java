@@ -655,7 +655,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			
 			/* Notify the event handler that we've connected */
 			if (_eventHandler != null) {
-				_eventHandler.onConnected();
+				_eventHandler.onConnected(_name, _remoteAddress);
 			}
 			
 			while (_state == BTState.CONNECTED) {
@@ -710,7 +710,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			
 			/* Notify the event handler that we've connected */
 			if (_eventHandler != null) {
-				_eventHandler.onDisconnected();
+				_eventHandler.onDisconnected(_name, _remoteAddress);
 			} else {
 				Logger.warn("No event handlers to notify!");
 			}

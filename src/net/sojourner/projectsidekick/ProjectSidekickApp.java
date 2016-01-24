@@ -38,7 +38,8 @@ public class ProjectSidekickApp extends Application {
 	public Mode getMode() {
 		return _mode;
 	}
-
+	
+	/* Registered Device List Manipulation Methods */
     public List<KnownDevice> getRegisteredDevices() {
     	if (_registeredDevices.isEmpty()) {
     		restoreRegisteredDevices();

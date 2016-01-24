@@ -35,8 +35,8 @@
             android:label="@string/title_app_mode_config_beacon">
         </activity>
         <activity 
-            android:name=".AppModeBeaconDiscoverListActivity"
-            android:label="@string/title_app_mode_config_beacon">
+            android:name=".AppModeBeaconMasterListActivity"
+            android:label="@string/title_app_mode_beacon_master_list">
         </activity>
         <activity 
             android:name=".BeaconModeActivity"

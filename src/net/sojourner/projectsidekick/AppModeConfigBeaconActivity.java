@@ -276,13 +276,13 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
             (Button) findViewById(R.id.btn_delete);
         btnDelete.setEnabled(true);
 
-        Button btnReqDiscover = 
-            (Button) findViewById(R.id.btn_req_discover);
-        btnReqDiscover.setEnabled(true);
-        
-        Button btnReqDiscoverList = 
-            (Button) findViewById(R.id.btn_req_discover_list);
-        btnReqDiscoverList.setEnabled(true);
+//        Button btnReqDiscover = 
+//            (Button) findViewById(R.id.btn_req_discover);
+//        btnReqDiscover.setEnabled(true);
+//        
+//        Button btnReqDiscoverList = 
+//            (Button) findViewById(R.id.btn_req_discover_list);
+//        btnReqDiscoverList.setEnabled(true);
         
         Button btnReqBringList = 
             (Button) findViewById(R.id.btn_req_bring_list);
@@ -304,13 +304,13 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
             (Button) findViewById(R.id.btn_delete);
         btnDelete.setEnabled(false);
 
-        Button btnReqDiscover = 
-            (Button) findViewById(R.id.btn_req_discover);
-        btnReqDiscover.setEnabled(false);
-        
-        Button btnReqDiscoverList = 
-            (Button) findViewById(R.id.btn_req_discover_list);
-        btnReqDiscoverList.setEnabled(false);
+//        Button btnReqDiscover = 
+//            (Button) findViewById(R.id.btn_req_discover);
+//        btnReqDiscover.setEnabled(false);
+//        
+//        Button btnReqDiscoverList = 
+//            (Button) findViewById(R.id.btn_req_discover_list);
+//        btnReqDiscoverList.setEnabled(false);
         
         Button btnReqBringList = 
             (Button) findViewById(R.id.btn_req_bring_list);
@@ -320,7 +320,7 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
     }
 
 	@Override
-	public void onConnected() {
+	public void onConnected(String name, String address) {
 		new AsyncTask<Void, Void, Void> (){
 
 			@Override
@@ -341,7 +341,7 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
 	}
 
 	@Override
-	public void onDisconnected() {
+	public void onDisconnected(String name, String address) {
 		new AsyncTask<Void, Void, Void> (){
 
 			@Override
@@ -374,12 +374,35 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
 			protected void onPostExecute(byte[] data) {
 				Toast.makeText(AppModeConfigBeaconActivity.this, "Data Received: " + new String(data), Toast.LENGTH_SHORT).show();
 				
+				processResponse(data);
+				
 				super.onPostExecute(data);
 				return;
 			}
 			
 		}.execute(data);
 	}
+	
+
+    private void processResponse(byte[] data) {
+        String dataStr = new String(data);
+
+        if (dataStr.contains("BROUGHT")) {
+        	if (dataStr.length() <= 8) {
+        		Logger.warn("No devices found");
+        		return;
+        	}
+        	
+        	String devicesSubStr = dataStr.substring(8);
+        	
+        	Intent intent = new Intent(AppModeConfigBeaconActivity.this,
+        								AppModeBeaconMasterListActivity.class);
+        	intent.putExtra("MASTER_DVC_LIST", devicesSubStr);
+        	startActivity(intent);
+        }
+        	
+        return;
+    }
 	
 	private void reloadDeviceInfo() {
         TextView txvDvcInfo = (TextView) findViewById(R.id.txv_dvc_info);

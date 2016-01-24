@@ -5,6 +5,7 @@
     <string name="title_app_mode">App Mode</string>
     <string name="title_app_mode_config_beacon">Configure Device</string>
     <string name="title_app_mode_beacon_discovered_list">Nearby Devices</string>
+    <string name="title_app_mode_beacon_master_list">Master List</string>
     <string name="title_beacon_mode">Beacon Mode</string>
     <string name="hello_world">Hello world!</string>
 

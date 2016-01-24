@@ -1,7 +1,9 @@
 package net.sojourner.projectsidekick;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import net.sojourner.projectsidekick.interfaces.BluetoothEventHandler;
 import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
@@ -15,6 +17,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -319,13 +322,13 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 	}
 	
 	private void sendBroughtDevices() {
-		if (_broughtDevices == null) {
+		if (_registeredDevices == null) {
 			Logger.err("Brought device list not initialized");
 			return;
 		}
 		
 		String devices = "BROUGHT ";
-		for (KnownDevice kd : _broughtDevices) {
+		for (KnownDevice kd : _registeredDevices) {
 			devices += kd.getAddress();
 		}
 		
@@ -364,9 +367,9 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 		
 		String requestPart[] = request.substring(iStartIdx).split(" ");
 		
-		for (KnownDevice kd : _broughtDevices) {
+		for (KnownDevice kd : _registeredDevices) {
 			if (kd.getAddress().equals(requestPart[1])) {
-				_broughtDevices.remove(kd);
+				_registeredDevices.remove(kd);
 				return;
 			}
 		}
@@ -391,11 +394,11 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
              *  empty. The beacon can be told to add specific devices to the
              *  bring list but only if it has already discovered them */
         	sendBroughtDevices();
-        } else if (dataStr.equals("BRING")) {
+        } else if (dataStr.contains("BRING")) {
             /* Tells this beacon to add the device which matches the address
              *  given to the bring list */
         	bringDevice(dataStr);
-        } else if (dataStr.equals("LEAVE")) {
+        } else if (dataStr.contains("LEAVE")) {
             /* Tells this beacon to remove the device which matches the address
              *  given from the bring list */
         	leaveDevice(dataStr);
@@ -421,6 +424,62 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 	        }
 	    }
 	};
+	
+	private List<KnownDevice> _registeredDevices = new ArrayList<KnownDevice>();
+
+    public Status addRegisteredDevice(KnownDevice device) {
+    	/* Check if we already have this device in our list */
+    	for (KnownDevice kd : _registeredDevices) {
+    		if (kd.getAddress().equals(device.getAddress())) {
+    			Logger.warn("Device already registered");
+    			return Status.OK;
+    		}
+    	}
+    	
+    	if (_registeredDevices.add(device) != true) {
+    		Logger.err("Failed to add device");
+    		return Status.FAILED;
+    	}
+    	
+    	return Status.OK;
+    }
+
+    public void restoreMasterList() {
+		SharedPreferences prefs = getSharedPreferences("PROJECT_BEACON__1127182", MODE_WORLD_WRITEABLE);
+		
+		Set<String> rgdSet = prefs.getStringSet("MASTER_DVC_LIST", null);
+		if (rgdSet != null) {
+			for (String item : rgdSet) {
+				String deviceInfo[] = item.split(",");
+				if (deviceInfo.length != 2) {
+					Logger.err("Skipping malformed registered device string: " 
+								+ item);
+					continue;
+				}
+				
+				KnownDevice kd = new KnownDevice(deviceInfo[0], deviceInfo[1]);
+				kd.setRegistered(true);
+				
+				addRegisteredDevice(kd);
+			}
+		}
+		return;
+    }
+    
+	private Status saveMasterList() {
+		SharedPreferences prefs = getSharedPreferences("PROJECT_BEACON__1127182", MODE_WORLD_WRITEABLE);
+
+		Set<String> rgdInfoSet = new HashSet<String>();
+		for (KnownDevice rd : _registeredDevices) {
+			Logger.info("Adding " + rd.getName() + " to set");
+			rgdInfoSet.add(rd.getName() + "," + rd.getAddress());
+		}
+		prefs.edit().putStringSet("MASTER_DVC_LIST", rgdInfoSet).commit();
+		
+		Logger.info("Saved registered devices");
+		
+		return Status.OK;
+	}
 
 	@Override
 	public void onDataReceived(byte[] data) {
@@ -446,7 +505,11 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 	}
 
 	@Override
-	public void onConnected() {
+	public void onConnected(String name, String address) {
+		
+		final String deviceName = name;
+		final String deviceAddr = address;
+		
 		new AsyncTask<Void, Void, Void> (){
 
 			@Override
@@ -458,6 +521,10 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 			protected void onPostExecute(Void result) {
 				Toast.makeText(BeaconModeActivity.this, "Connected!", Toast.LENGTH_SHORT).show();
 				
+				KnownDevice kd = new KnownDevice(deviceName, deviceAddr);
+				addRegisteredDevice(kd);
+				saveMasterList();
+				
 				super.onPostExecute(result);
 			}
 			
@@ -466,7 +533,7 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 	}
 
 	@Override
-	public void onDisconnected() {
+	public void onDisconnected(String name, String address) {
 		new AsyncTask<Void, Void, Void> (){
 
 			@Override
