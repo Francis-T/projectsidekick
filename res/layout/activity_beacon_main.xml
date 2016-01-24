@@ -1,0 +1,60 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    tools:context="${relativePackage}.${activityClass}" >
+    
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="100dip"
+        android:orientation="horizontal">
+	    <ImageButton
+	        android:id="@+id/btn_allow_discovery"
+	        android:layout_width="0dip"
+	        android:layout_height="match_parent"
+	        android:layout_weight="1"
+	        android:src="@android:drawable/ic_menu_share"
+	        android:contentDescription="Allow Discovery" />
+	    
+	    <ImageButton
+	        android:id="@+id/btn_mode"
+	        android:layout_width="0dip"
+	        android:layout_height="match_parent"
+	        android:layout_weight="1"
+	        android:src="@android:drawable/ic_menu_send"
+	        android:contentDescription="Set Mode" />
+    </LinearLayout>
+    
+    <!-- LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dip"
+        android:layout_weight="2"
+        android:orientation="horizontal">
+	    <TextView
+	            android:layout_width="0dip"
+	            android:layout_height="wrap_content"
+	            android:layout_weight="1"
+	            android:text="Accept Connections" />
+	    <Switch android:id="@+id/sw_allow_conn"
+            android:layout_width="0dip"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+    </LinearLayout-->
+    
+    <!-- LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dip"
+        android:layout_weight="2"
+        android:orientation="horizontal">
+        <TextView
+                android:layout_width="0dip"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Anti-Theft Mode" />
+	    <Switch android:id="@+id/sw_mode"
+	            android:layout_width="0dip"
+	            android:layout_height="wrap_content"
+                android:layout_weight="1" />
+    </LinearLayout-->
+</LinearLayout>
