@@ -121,7 +121,7 @@ public class AppModeBeaconMasterListActivity extends ListActivity implements Blu
     }
 
 	@Override
-	public void onDataReceived(byte[] data) {
+	public void onDataReceived(String name, String address, byte[] data) {
 		new AsyncTask<byte[], Void, byte[]> (){
 
 			@Override

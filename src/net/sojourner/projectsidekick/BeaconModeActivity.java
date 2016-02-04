@@ -5,36 +5,38 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import net.sojourner.projectsidekick.interfaces.BluetoothEventHandler;
-import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
+import net.sojourner.projectsidekick.types.GuardedItem;
 import net.sojourner.projectsidekick.types.KnownDevice;
 import net.sojourner.projectsidekick.types.Status;
 import net.sojourner.projectsidekick.utils.Logger;
-import android.app.Activity;
+import android.app.ListActivity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.ImageButton;
 import android.widget.Toast;
 
-public class BeaconModeActivity extends Activity implements BluetoothEventHandler {
-	private ProjectSidekickApp _app = null;
-	private BluetoothAdapter _bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-	private IBluetoothBridge _bluetooth = null;
-	
-	private List<KnownDevice>	_discoveredDevices 	= new ArrayList<KnownDevice>();
-	private List<KnownDevice>	_broughtDevices 	= new ArrayList<KnownDevice>();
-	private boolean			 	_isActive 			= false;
-	private boolean 			_isDiscovering 		= false;
-	private String			 	_mode 				= "theft";
+public class BeaconModeActivity extends ListActivity {
+	private ProjectSidekickApp 			_app 				= null;
+	private Messenger 					_service 			= null;
+	private BluetoothAdapter			_bluetoothAdapter 	= BluetoothAdapter.getDefaultAdapter();
+	private boolean			 			_isActive 			= false;
+	private boolean 					_bIsBound 			= false;
+	private boolean 					_bIsSettingUp 		= false;
+	private ArrayAdapter<GuardedItem> 	_guardedListAdapter	= null;
 	
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -50,11 +52,6 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 			= new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
 		startActivityForResult(discoverableIntent, ProjectSidekickApp.REQUEST_BLUETOOTH_DISCOVERABLE);
 		
-		if (_receiver != null) {
-			IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-			registerReceiver(_receiver, filter);
-		}
-		
 		final ImageButton btnAllowDiscover 
 			= (ImageButton) findViewById(R.id.btn_allow_discovery);
 		btnAllowDiscover.setColorFilter(Color.RED);
@@ -62,17 +59,25 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 			new View.OnClickListener() {
 				@Override
 				public void onClick(View v) {
+					Status status = Status.FAILED;
 					if (!_isActive) {
-						startBluetooth();
+						status = callService(ProjectSidekickService.MSG_START_GUARD);
+						if (status != Status.OK) {
+							display("Failed to activate GUARD Mode");
+							return;
+						}
+						display("GUARD Mode has been activated");
 						_isActive = true;
-						Toast.makeText(BeaconModeActivity.this, "Device: ON", Toast.LENGTH_SHORT).show();
-						btnAllowDiscover.setColorFilter(Color.GREEN);
 					} else {
-						stopBluetooth();
+						status = callService(ProjectSidekickService.MSG_STOP);
+						if (status != Status.OK) {
+							display("Failed to deactivate GUARD Mode");
+							return;
+						}
+						display("GUARD Mode has been deactivated");
 						_isActive = false;
-						Toast.makeText(BeaconModeActivity.this, "Device: OFF", Toast.LENGTH_SHORT).show();
-						btnAllowDiscover.setColorFilter(Color.RED);
 					}
+					return;
 				}
 			}
 		);
@@ -83,42 +88,63 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 			new View.OnClickListener() {
 				@Override
 				public void onClick(View v) {
-					sendData("Anti-"+_mode+" mode has been enabled on your beacon.");
-					if (_mode.equals("theft")) {
-						_mode = "loss";
+					Status status = Status.FAILED;
+					if (!_bIsSettingUp) {
+						status = callService(ProjectSidekickService.MSG_SET_AS_SIDEKICK);
+						if (status != Status.OK) {
+							display("Failed to set beacon to Anti-Loss Mode.");
+							return;
+						}
+						display("Your beacon has been set to Anti-Loss Mode.");
+	
+						status = callService(ProjectSidekickService.MSG_START_SETUP);
+						if (status != Status.OK) {
+							display("Failed to start SETUP Mode.");
+							return;
+						}
+						display("SETUP Mode Started.");
+						_bIsSettingUp = true;
 					} else {
-						_mode = "theft";
+
+						status = callService(ProjectSidekickService.MSG_STOP);
+						if (status != Status.OK) {
+							display("Failed to Stop.");
+							return;
+						}
+						display("Stopped.");
+						_bIsSettingUp = false;
 					}
-				}
-			}
-		);
-		
-		final ImageButton btnSearch
-			= (ImageButton) findViewById(R.id.btn_beacon_discover);
-		btnSearch.setOnClickListener(
-			new View.OnClickListener() {
-				@Override
-				public void onClick(View v) {
-					if (!_isDiscovering) {
-						startDeviceDiscovery();
-						_isDiscovering = true;
-						display("Discovery started");
-					} else {
-						stopDeviceDiscovery();
-						_isDiscovering = false;
-						display("Discovery Stopped");
-					}
+					
 					return;
 				}
 			}
 		);
+		
+		_guardedListAdapter = new ArrayAdapter<GuardedItem>(this, android.R.layout.simple_list_item_1);
+		setListAdapter(_guardedListAdapter);
 
+		return;
 	}
 
 	@Override
-	protected void onPause() {
-		// TODO Auto-generated method stub
-		super.onPause();
+	protected void onStart() {
+		super.onStart();
+		
+		if (_receiver != null) {
+			IntentFilter filter = new IntentFilter();
+			filter.addAction(ProjectSidekickService.ACTION_REGISTERED);
+			filter.addAction(ProjectSidekickService.ACTION_UNREGISTERED);
+			filter.addAction(ProjectSidekickService.ACTION_UPDATE_LOST);
+			filter.addAction(ProjectSidekickService.ACTION_UPDATE_FOUND);
+			registerReceiver(_receiver, filter);
+		}
+		
+		if (!_bIsBound) {
+			Intent bindServiceIntent = new Intent(this, ProjectSidekickService.class);
+			bindService(bindServiceIntent, _serviceConnection, Context.BIND_AUTO_CREATE);
+		}
+		
+		return;
 	}
 
 	@Override
@@ -126,15 +152,24 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 		if (_app == null) {
 			_app = (ProjectSidekickApp) getApplication();
 		}
+		
 		super.onResume();
+	}
+
+	@Override
+	protected void onPause() {
+		
+		super.onPause();
+		return;
 	}
 	
 	@Override
 	protected void onStop() {
-		if (_bluetooth != null) {
-			_bluetooth.destroy();
+		if (_bIsBound) {
+			unbindService(_serviceConnection);
+			_bIsBound = false;
 		}
-
+		
 		if (_receiver != null) {
 			unregisterReceiver(_receiver);
 		}
@@ -164,266 +199,42 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 		Logger.info("onActivityResult Finished");
 		return;
 	}
-
+	
+	/* *************** */
+	/* Private Methods */
+	/* *************** */
     private void display(String msg) {
         Toast.makeText( this, msg,  Toast.LENGTH_SHORT).show();
         return;
     }
-	
-	private void startBluetooth() {
-		if (_app == null) {
-			_app = (ProjectSidekickApp) getApplication();
-		}
-		
-		if (_bluetooth == null) {
-			_bluetooth = _app.getBluetoothBridge();
-		}
-		
-		_bluetooth.setEventHandler(this);
-		
-		if (_bluetooth.initialize(this, true) != Status.OK) {
-			Logger.err("Failed to initialize Bluetooth");
-			return;
-		}
-		
-		if (_bluetooth.listen() != Status.OK) {
-			Logger.err("Failed to start Bluetooth connection listener");
-			return;
-		}
-		
-		return;
-	}
-	
-	private void startDeviceDiscovery() {
-		if (_app == null) {
-			_app = (ProjectSidekickApp) getApplication();
-		}
-		
-		if (_bluetooth == null) {
-			_bluetooth = _app.getBluetoothBridge();
-		}
-		
-		_bluetooth.setEventHandler(this);
-		
-		if (_bluetooth.initialize(this, false) != Status.OK) {
-			Logger.err("Failed to initialize Bluetooth");
-			return;
-		}
-		_bluetooth.startDeviceDiscovery();
-		
-		return;
-	}
-	
-	private void stopDeviceDiscovery() {
-		if (_app == null) {
-			_app = (ProjectSidekickApp) getApplication();
-		}
-		
-		if (_bluetooth == null) {
-			_bluetooth = _app.getBluetoothBridge();
-		}
-		
-		_bluetooth.stopDeviceDiscovery();
-		
-		return;
-	}
-	
-	private void stopBluetooth() {
-		if (_app == null) {
-			_app = (ProjectSidekickApp) getApplication();
-		}
-		
-		if (_bluetooth == null) {
-			_bluetooth = _app.getBluetoothBridge();
-		}
-		
-		if (_bluetooth.destroy() != Status.OK) {
-			Logger.err("Failed to disconnect Bluetooth");
-			return;
-		}
-		
-		_bluetooth.setEventHandler(null);
-		
-		return;
-	}
-	
-	private void sendData(String msg) {
-		if (_app == null) {
-			_app = (ProjectSidekickApp) getApplication();
-		}
-		
-		if (_bluetooth == null) {
-			_bluetooth = _app.getBluetoothBridge();
-		}
-		
-		if (_bluetooth.broadcast(msg.getBytes()) != Status.OK) {
-			Logger.err("Failed to send data");
-			return;
-		}
-		Toast.makeText(BeaconModeActivity.this, "Sent: " + msg, Toast.LENGTH_SHORT).show();
-		
-		return;
-	}
-	
-	private void addDiscoveredDevice(String name, String address) {
-		if (_discoveredDevices == null) {
-			Logger.err("Discovered device list not initialized");
-			return;
-		}
-		
-		/* Check first if this device already exists in our discovered list */
-		for (KnownDevice kd : _discoveredDevices) {
-			if (kd.getAddress().equals(address)) {
-				Logger.warn("Device is already in the discovered list");
-				return;
-			}
-		}
-		
-		/* Add it to the discovered list */
-		_discoveredDevices.add(new KnownDevice(name,address));
-		
-		return;
-	}
-	
-	private void addBroughtDevice(String name, String address) {
-		if (_broughtDevices == null) {
-			Logger.err("Brought device list not initialized");
-			return;
-		}
-		
-		/* Check first if this device already exists in our discovered list */
-		for (KnownDevice kd : _broughtDevices) {
-			if (kd.getAddress().equals(address)) {
-				Logger.warn("Device is already in the brought device list");
-				return;
-			}
-		}
-		
-		/* Add it to the discovered list */
-		_broughtDevices.add(new KnownDevice(name,address));
-		
-		return;
-	}
-	
-	private void sendDiscoveredDevices() {
-		if (_discoveredDevices == null) {
-			Logger.err("Discovered device list not initialized");
-			return;
-		}
-		
-		String devices = "DISCOVERED ";
-		for (KnownDevice kd : _discoveredDevices) {
-			devices += kd.getAddress();
-		}
-		
-		sendData(devices);
-		
-		return;
-	}
-	
-	private void sendBroughtDevices() {
-		if (_registeredDevices == null) {
-			Logger.err("Brought device list not initialized");
-			return;
-		}
-		
-		String devices = "BROUGHT ";
-		for (KnownDevice kd : _registeredDevices) {
-			devices += kd.getAddress();
-		}
-		
-		sendData(devices);
-		
-		return;
-	}
-	
-	private void bringDevice(String request) {
-		int iStartIdx = request.indexOf("BRING");
-		if (iStartIdx < 0) {
-			Logger.err("Invalid bring request string");
-			return;
-		}
-		
-		String requestPart[] = request.substring(iStartIdx).split(" ");
-		
-		for (KnownDevice kd : _discoveredDevices) {
-			if (kd.getAddress().equals(requestPart[1])) {
-				addBroughtDevice(kd.getName(), kd.getAddress());
-				return;
-			}
-		}
-		
-		Logger.err("Device not found (might not yet be discovered)");
-		
-		return;
-	}
-	
-	private void leaveDevice(String request) {
-		int iStartIdx = request.indexOf("LEAVE");
-		if (iStartIdx < 0) {
-			Logger.err("Invalid leave request string");
-			return;
-		}
-		
-		String requestPart[] = request.substring(iStartIdx).split(" ");
-		
-		for (KnownDevice kd : _registeredDevices) {
-			if (kd.getAddress().equals(requestPart[1])) {
-				_registeredDevices.remove(kd);
-				return;
-			}
-		}
-		
-		Logger.err("Device not found (might not yet be discovered)");
-		
-		return;
-	}
 
-    private void processRequest(byte[] data) {
-        String dataStr = new String(data);
-
-        if (dataStr.equals("DISCOVER")) {
-            /* Restart discovery of nearby devices */
-        	startDeviceDiscovery();
-        } else if (dataStr.equals("LIST DISCOVERED")) {
-            /* Sends the list of discovered devices (i.e. devices in range) 
-             *  back to the client */
-        	sendDiscoveredDevices();
-        } else if (dataStr.equals("LIST BROUGHT")) {
-            /* List the devices which will be "brought" and guarded. Initially 
-             *  empty. The beacon can be told to add specific devices to the
-             *  bring list but only if it has already discovered them */
-        	sendBroughtDevices();
-        } else if (dataStr.contains("BRING")) {
-            /* Tells this beacon to add the device which matches the address
-             *  given to the bring list */
-        	bringDevice(dataStr);
-        } else if (dataStr.contains("LEAVE")) {
-            /* Tells this beacon to remove the device which matches the address
-             *  given from the bring list */
-        	leaveDevice(dataStr);
-        }
-
-        return;
+    private Status callService(int msgId) {
+		return callService(msgId, null);
     }
     
-	// Create a BroadcastReceiver for ACTION_FOUND
-	private final BroadcastReceiver _receiver = new BroadcastReceiver() {
-	    public void onReceive(Context context, Intent intent) {
-	        String action = intent.getAction();
-	        // When discovery finds a device
-	        if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-	            // Get the BluetoothDevice object from the Intent
-	            BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-//	            String uuidStr = "";
-//	            for (ParcelUuid p : device.getUuids()) {
-//	            	uuidStr += p.getUuid().toString() + " ";
-//	            }
-	            addDiscoveredDevice(device.getName(), device.getAddress());
-	            display("Discovered Device: " + device.getName() + ", " + device.getAddress());
-	        }
-	    }
-	};
+    private Status callService(int msgId, Bundle extras) {
+    	if (_service == null) {
+    		Logger.err("Service unavailable");
+    		return Status.FAILED;
+    	}
+    	
+    	if (!_bIsBound) {
+    		Logger.err("Service unavailable");
+    		return Status.FAILED;
+    	}
+    	
+		Message msg = Message.obtain(null, msgId, 0, 0);
+		msg.setData(extras);
+		
+		try {
+			_service.send(msg);
+		} catch (Exception e) {
+			Logger.err("Failed to call service: " + e.getMessage());
+			return Status.FAILED;
+		}
+		
+		return Status.OK;
+    }
 	
 	private List<KnownDevice> _registeredDevices = new ArrayList<KnownDevice>();
 
@@ -481,80 +292,86 @@ public class BeaconModeActivity extends Activity implements BluetoothEventHandle
 		return Status.OK;
 	}
 
-	@Override
-	public void onDataReceived(byte[] data) {
-		new AsyncTask<byte[], Void, byte[]> (){
-
-			@Override
-			protected byte[] doInBackground(byte[]... params) {
-				return params[0];
-			}
-
-			@Override
-			protected void onPostExecute(byte[] data) {
-				Toast.makeText(BeaconModeActivity.this, "Data Received: " + new String(data), Toast.LENGTH_SHORT).show();
-				
-                processRequest(data);
-
-				super.onPostExecute(data);
-				return;
-			}
+	/* ********************* */
+	/* Private Inner Classes */
+	/* ********************* */
+	private ServiceConnection _serviceConnection = new ServiceConnection() {
+		@Override
+		public void onServiceDisconnected(ComponentName className) {
+			_service = null;
+			_bIsBound = false;
 			
-		}.execute(data);
-		return;
-	}
-
-	@Override
-	public void onConnected(String name, String address) {
+			return;
+		}
 		
-		final String deviceName = name;
-		final String deviceAddr = address;
-		
-		new AsyncTask<Void, Void, Void> (){
-
-			@Override
-			protected Void doInBackground(Void... arg0) {
-				return null;
-			}
-
-			@Override
-			protected void onPostExecute(Void result) {
-				Toast.makeText(BeaconModeActivity.this, "Connected!", Toast.LENGTH_SHORT).show();
-				
-				KnownDevice kd = new KnownDevice(deviceName, deviceAddr);
-				addRegisteredDevice(kd);
-				saveMasterList();
-				
-				super.onPostExecute(result);
-			}
+		@Override
+		public void onServiceConnected(ComponentName className, IBinder binder) {
+			_service = new Messenger(binder);
+			_bIsBound = true;
 			
-		}.execute();
-		return;
-	}
+			return;
+		}
+	};
 
-	@Override
-	public void onDisconnected(String name, String address) {
-		new AsyncTask<Void, Void, Void> (){
-
-			@Override
-			protected Void doInBackground(Void... arg0) {
-				return null;
-			}
-
-			@Override
-			protected void onPostExecute(Void result) {
-				Toast.makeText(BeaconModeActivity.this, "Disconnected!", Toast.LENGTH_SHORT).show();
-				stopBluetooth();
-				if (_isActive) {
-					_isActive = false;
-					Toast.makeText(BeaconModeActivity.this, "Device: OFF", Toast.LENGTH_SHORT).show();
-					ImageButton btnAllowDiscover = (ImageButton) findViewById(R.id.btn_allow_discovery);
-					btnAllowDiscover.setColorFilter(Color.RED);
-				}
-				
-				super.onPostExecute(result);
-			}
-			
-		}.execute();
-	}
+	private final BroadcastReceiver _receiver = new BroadcastReceiver() {
+	    public void onReceive(Context context, Intent intent) {
+	        String action = intent.getAction();
+	        // When discovery finds a device
+	        if (ProjectSidekickService.ACTION_REGISTERED.equals(action)) {
+	        	String name = intent.getStringExtra("NAME");
+	        	String address = intent.getStringExtra("ADDRESS");
+	        	
+	        	for (int i = 0; i < _guardedListAdapter.getCount(); i++) {
+	        		GuardedItem item = _guardedListAdapter.getItem(i);
+	        		if (item.getAddress().equals(address)) {
+	        			Logger.warn("Registered device already listed");
+	        			item.setIsLost(false);
+	    	        	_guardedListAdapter.notifyDataSetChanged();
+	        			return;
+	        		}
+	        	}
+	        	
+	        	_guardedListAdapter.add(new GuardedItem(name, address));
+	        	_guardedListAdapter.notifyDataSetChanged();
+	        	
+	        } else if (ProjectSidekickService.ACTION_UNREGISTERED.equals(action)) {
+	        	String address = intent.getStringExtra("ADDRESS");
+	        	
+	        	for (int i = 0; i < _guardedListAdapter.getCount(); i++) {
+	        		GuardedItem item = _guardedListAdapter.getItem(i);
+	        		if (item.getAddress().equals(address)) {
+	        			_guardedListAdapter.remove(item);
+	        			break;
+	        		}
+	        	}
+	        	_guardedListAdapter.notifyDataSetChanged();
+	        } else if (ProjectSidekickService.ACTION_UPDATE_LOST.equals(action)) {
+	        	String address = intent.getStringExtra("ADDRESS");
+	        	boolean isLost = intent.getBooleanExtra("LOST_STATUS", false);
+	        	
+	        	for (int i = 0; i < _guardedListAdapter.getCount(); i++) {
+	        		GuardedItem item = _guardedListAdapter.getItem(i);
+	        		if (item.getAddress().equals(address)) {
+	        			item.setIsLost(isLost);
+	        			break;
+	        		}
+	        	}
+	        	_guardedListAdapter.notifyDataSetChanged();
+	        } else if (ProjectSidekickService.ACTION_UPDATE_FOUND.equals(action)) {
+	        	String address = intent.getStringExtra("ADDRESS");
+	        	boolean isLost = intent.getBooleanExtra("LOST_STATUS", false);
+	        	
+	        	for (int i = 0; i < _guardedListAdapter.getCount(); i++) {
+	        		GuardedItem item = _guardedListAdapter.getItem(i);
+	        		if (item.getAddress().equals(address)) {
+	        			item.setIsLost(isLost);
+	        			break;
+	        		}
+	        	}
+	        	_guardedListAdapter.notifyDataSetChanged();
+	        }
+	        
+	        return;
+	    }
+	};
 }

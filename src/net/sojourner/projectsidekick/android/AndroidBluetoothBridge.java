@@ -13,6 +13,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import net.sojourner.projectsidekick.interfaces.BluetoothEventHandler;
 import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
+import net.sojourner.projectsidekick.types.BTState;
 import net.sojourner.projectsidekick.types.Status;
 import net.sojourner.projectsidekick.utils.Logger;
 
@@ -36,7 +37,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 	
 	private static AndroidBluetoothBridge _androidBluetoothBridge = null;
 	
-	private BluetoothAdapter 	_bluetoothAdapter 	= null;
+	private BluetoothAdapter 	_bluetoothAdapter 	= BluetoothAdapter.getDefaultAdapter();
 	private BroadcastReceiver 	_broadcastReceiver 	= null;
 	private boolean 			_isServer 			= false;
 	private BTState				_state 				= BTState.UNKNOWN;
@@ -79,6 +80,10 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		return "android";
 	}
 	
+	public BTState getState() {
+		return _state;
+	}
+	
 	@Override
 	public Status initialize(Object initObject, boolean isServer) {
 		/* Allow connect only if we're coming from the unknown state */
@@ -94,13 +99,12 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		/* Treat the initObject as the _context */
 		_context = (Context) initObject;
 		
-		_bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-		
-		if ( _bluetoothAdapter == null ) {
-			Logger.err("Could not obtain a Bluetooth adapter");
-			return Status.FAILED;
-		}
-		
+//		_bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+//		
+//		if ( _bluetoothAdapter == null ) {
+//			Logger.err("Could not obtain a Bluetooth adapter");
+//			return Status.FAILED;
+//		}
 		if ( _bluetoothAdapter.isEnabled() == false ) {
 			Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
 			_context.startActivity(enableBtIntent);
@@ -123,20 +127,15 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 
 	@Override
 	public void startDeviceDiscovery() {
-		if (_bluetoothAdapter != null) {
-			_bluetoothAdapter.startDiscovery();
-			Logger.info("Service Discovery started.");
-		}
-		
+		_bluetoothAdapter.startDiscovery();
+		Logger.info("Service Discovery started.");
 		return;
 	}
 
 	@Override
 	public void stopDeviceDiscovery() {
-		if (_bluetoothAdapter != null) {
-			_bluetoothAdapter.cancelDiscovery();
-			Logger.info("Service Discovery stopped.");
-		}
+		_bluetoothAdapter.cancelDiscovery();
+		Logger.info("Service Discovery stopped.");
 		return;
 	}
 
@@ -201,11 +200,6 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		
 		if ( BluetoothAdapter.checkBluetoothAddress(address) == false ) {
 			Logger.err("Invalid bluetooth hardware address: " + address);
-			return Status.FAILED;
-		}
-		
-		if (_bluetoothAdapter == null) {
-			Logger.err("Bluetooth adapter unavailable");
 			return Status.FAILED;
 		}
 		
@@ -306,6 +300,18 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		Logger.info("Found device address: " + address);
 
 		return (this.connectDeviceByAddress(address));
+	}
+
+	@Override
+	public Status disconnectDeviceByAddress(String address) {
+		if (!_currentConnections.containsKey(address)) {
+			return Status.FAILED;
+		}
+		
+		BluetoothConnection conn = _currentConnections.get(address);
+		conn.cancel();
+		
+		return Status.OK;
 	}
 
 	@Override
@@ -686,7 +692,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 					if (_eventHandler != null) {
 						Logger.info("Notifying handlers from AndroidBluetoothBridge...");
 						Logger.info("    Buffer Len: " + bytesRead);
-						_eventHandler.onDataReceived(buffer);
+						_eventHandler.onDataReceived(getDeviceName(), getDeviceAddress(), buffer);
 					} else {
 						Logger.warn("AndroidBluetoothBridge event handler not set");
 					}
@@ -715,6 +721,14 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 				Logger.warn("No event handlers to notify!");
 			}
 			
+			if (_socket != null) {
+				try {
+					_socket.close();
+				} catch (IOException e) {
+					Logger.err("Failed to close BluetoothConnection socket");
+				}
+			}
+			
 			return;
 		}
 		
@@ -739,19 +753,21 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		}
 		
 		public void cancel() {
-			if (_socket == null) {
-				Logger.err("Invalid BluetoothConnection socket");
-				detachConnection();
-				return;
-			}
+//			if (_socket == null) {
+//				Logger.err("Invalid BluetoothConnection socket");
+//				detachConnection();
+//				return;
+//			}
+//			
+//			try {
+//				_socket.close();
+//			} catch (IOException e) {
+//				Logger.err("Failed to close BluetoothConnection socket");
+//			}
+//			
+//			detachConnection();
 			
-			try {
-				_socket.close();
-			} catch (IOException e) {
-				Logger.err("Failed to close BluetoothConnection socket");
-			}
-			
-			detachConnection();
+			_state = BTState.DISCONNECTED;
 			
 			Logger.info("Bluetooth Connection cancelled");
 			
@@ -770,10 +786,6 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		private boolean _useSecureRfComm = false;
 		
 		public BluetoothListenerThread(boolean useSecureRfComm) {
-			if (_bluetoothAdapter == null) {
-				return;
-			}
-			
 			_bluetoothServerSocket = getServerSocket(useSecureRfComm);
 			if (_bluetoothServerSocket == null) {
 				return;
@@ -993,9 +1005,10 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 
 	@Override
 	public boolean isReady() {
-		// TODO Auto-generated method stub
+		if (_bluetoothAdapter.isEnabled()) {
+			return true;
+		}
+		
 		return false;
 	}
-	
-	protected enum BTState { UNKNOWN, LISTENING, CONNECTING, CONNECTED, DISCONNECTED };
 }

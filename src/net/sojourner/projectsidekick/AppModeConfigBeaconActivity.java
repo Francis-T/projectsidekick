@@ -1,27 +1,35 @@
 package net.sojourner.projectsidekick;
 
-import net.sojourner.projectsidekick.interfaces.BluetoothEventHandler;
-import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
 import net.sojourner.projectsidekick.types.KnownDevice;
 import net.sojourner.projectsidekick.types.Status;
 import net.sojourner.projectsidekick.utils.Logger;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.bluetooth.BluetoothDevice;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.os.AsyncTask;
+import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-public class AppModeConfigBeaconActivity extends Activity implements BluetoothEventHandler {
-	private ProjectSidekickApp _app = (ProjectSidekickApp) getApplication();
-    private String _deviceName = "";
-    private String _deviceAddr = "";
-    private boolean _isConnected = false;
+public class AppModeConfigBeaconActivity extends Activity {
+	private ProjectSidekickApp 	_app 				= (ProjectSidekickApp) getApplication();
+	private Messenger 			_service 			= null;
+    private String 				_deviceName 		= "";
+    private String 				_deviceAddr 		= "";
+    private boolean 			_isConnected 		= false;
+	private boolean 			_bIsBound 			= false;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -81,6 +89,7 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
             new View.OnClickListener() {
 				@Override
 				public void onClick(View v) {
+					_app = getAppRef();
 					KnownDevice kd = _app.findRegisteredDevice(_deviceAddr);
 					if (kd == null) {
 						display( _deviceName + " has not yet been registered");
@@ -98,6 +107,7 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
             new View.OnClickListener() {
 				@Override
 				public void onClick(View v) {
+					_app = getAppRef();
 					KnownDevice kd = _app.findRegisteredDevice(_deviceAddr);
 					if (kd == null) {
 						display(_deviceName + " has not yet been registered");
@@ -109,158 +119,215 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
             }
         );
 
-        Button btnReqDiscover = 
-            (Button) findViewById(R.id.btn_req_discover);
-        btnReqDiscover.setOnClickListener(
-            new View.OnClickListener() {
-				@Override
-				public void onClick(View v) {
-                    String reqStr = "DISCOVER";
-                    if (sendRequest(reqStr) != Status.OK) {
-                        display("Request discovery failed!");
-                    }
-                    return;
-				}
-            }
-        );
+//        Button btnReqDiscover = 
+//            (Button) findViewById(R.id.btn_req_discover);
+//        btnReqDiscover.setOnClickListener(
+//            new View.OnClickListener() {
+//				@Override
+//				public void onClick(View v) {
+//                    String reqStr = "DISCOVER";
+//                    if (sendRequest(reqStr) != Status.OK) {
+//                        display("Request discovery failed!");
+//                    }
+//                    return;
+//				}
+//            }
+//        );
 
-        Button btnReqDiscoverList = 
-            (Button) findViewById(R.id.btn_req_discover_list);
-        btnReqDiscoverList.setOnClickListener(
-            new View.OnClickListener() {
-				@Override
-				public void onClick(View v) {
-                    String reqStr = "LIST DISCOVERED";
-                    if (sendRequest(reqStr) != Status.OK) {
-                        display("Request discovered list failed!");
-                    }
+//        Button btnReqDiscoverList = 
+//            (Button) findViewById(R.id.btn_req_discover_list);
+//        btnReqDiscoverList.setOnClickListener(
+//            new View.OnClickListener() {
+//				@Override
+//				public void onClick(View v) {
+//                    String reqStr = "LIST DISCOVERED";
+//                    if (sendRequest(reqStr) != Status.OK) {
+//                        display("Request discovered list failed!");
+//                    }
+//
+//                    /* Present a progress bar while we wait for the 
+//                     *  list to be received */
+//                    // TODO
+//                    return;
+//				}
+//            }
+//        );
 
-                    /* Present a progress bar while we wait for the 
-                     *  list to be received */
-                    // TODO
-                    return;
-				}
-            }
-        );
+//        Button btnReqBringList = 
+//            (Button) findViewById(R.id.btn_req_bring_list);
+//        btnReqBringList.setOnClickListener(
+//            new View.OnClickListener() {
+//				@Override
+//				public void onClick(View v) {
+//                    String reqStr = "LIST BROUGHT";
+//                    if (sendRequest(reqStr) != Status.OK) {
+//                        display("Request brought list failed!");
+//                    }
+//
+//                    /* Present a progress bar while we wait for the 
+//                     *  list to be received */
+//                    // TODO
+//                    return;
+//				}
+//            }
+//        );
 
-        Button btnReqBringList = 
-            (Button) findViewById(R.id.btn_req_bring_list);
-        btnReqBringList.setOnClickListener(
-            new View.OnClickListener() {
-				@Override
-				public void onClick(View v) {
-                    String reqStr = "LIST BROUGHT";
-                    if (sendRequest(reqStr) != Status.OK) {
-                        display("Request brought list failed!");
-                    }
-
-                    /* Present a progress bar while we wait for the 
-                     *  list to be received */
-                    // TODO
-                    return;
-				}
-            }
-        );
-
+		
+		if (!_bIsBound) {
+			Intent bindServiceIntent = new Intent(this, ProjectSidekickService.class);
+			bindService(bindServiceIntent, _serviceConnection, Context.BIND_AUTO_CREATE);
+		}
+		
         return;
     }
 
 	@Override
+	protected void onStart() {
+		super.onStart();
+		
+		if (_receiver != null) {
+			IntentFilter filter = new IntentFilter();
+			filter.addAction(ProjectSidekickService.ACTION_CONNECTED);
+			filter.addAction(ProjectSidekickService.ACTION_DATA_RECEIVE);
+			filter.addAction(ProjectSidekickService.ACTION_DISCONNECTED);
+			registerReceiver(_receiver, filter);
+		}
+		
+		return;
+	}
+	
+	@Override
 	protected void onPause() {
-		// TODO Auto-generated method stub
+		
 		super.onPause();
         return;
 	}
 
 	@Override
 	protected void onResume() {
-		// TODO Auto-generated method stub
         super.onResume();
+		
         return;
     }
 
-    /* Private Methods */
+	@Override
+	protected void onStop() {
+		super.onStop();
+		
+		Status status;
+		status = callService(ProjectSidekickService.MSG_DISCONNECT);
+		if (status != Status.OK) {
+			display("Failed to disconnect");
+			return;
+		}
+		display("Disconnected");
+
+		if (_receiver != null) {
+			unregisterReceiver(_receiver);
+		}
+		
+		return;
+	}
+	
+	
+
+	@Override
+	protected void onDestroy() {
+		Status status;
+		status = callService(ProjectSidekickService.MSG_STOP);
+		if (status != Status.OK) {
+			display("Failed to stop service");
+			return;
+		}
+		display("Stopped service");
+
+		if (_bIsBound) {
+			unbindService(_serviceConnection);
+			_bIsBound = false;
+		}
+		
+		super.onDestroy();
+		return;
+	}
+
+	/* *************** */
+	/* Private Methods */
+	/* *************** */
+    private void display(String msg) {
+        Toast.makeText( this, msg,  Toast.LENGTH_SHORT).show();
+        return;
+    }
+
+    private Status callService(int msgId) {
+		return callService(msgId, null);
+    }
+    
+    private Status callService(int msgId, Bundle extras) {
+    	if (_service == null) {
+    		Logger.err("Service unavailable");
+    		return Status.FAILED;
+    	}
+    	
+    	if (!_bIsBound) {
+    		Logger.err("Service unavailable");
+    		return Status.FAILED;
+    	}
+    	
+		Message msg = Message.obtain(null, msgId, 0, 0);
+		msg.setData(extras);
+		
+		try {
+			_service.send(msg);
+		} catch (Exception e) {
+			Logger.err("Failed to call service: " + e.getMessage());
+			return Status.FAILED;
+		}
+		
+		return Status.OK;
+    }
+	
     private Status connectToDevice() {
-        IBluetoothBridge bluetooth = getBluetoothBridge();
-        if (bluetooth == null) {
-            Logger.err("Could not obtain bluetooth bridge");
-            return Status.FAILED;
-        }
+		Status status;
+		
+		status = callService(ProjectSidekickService.MSG_SET_AS_MOBILE);
+		if (status != Status.OK) {
+			display("Failed set role to MOBILE");
+			return Status.FAILED;
+		}
+		display("Role set to MOBILE");
+		
+		status = callService(ProjectSidekickService.MSG_START_SETUP);
+		if (status != Status.OK) {
+			display("Failed start SETUP Mode");
+			return Status.FAILED;
+		}
+		display("Started SETUP Mode");
 
-        if (bluetooth.initialize(this, false) != Status.OK) {
-            Logger.err("Failed to initialize bluetooth bridge");
-            return Status.FAILED;
-        }
+		Bundle extras = new Bundle();
+		extras.putString("DEVICE_ADDR", _deviceAddr);
+		status = callService(ProjectSidekickService.MSG_SEND_REGISTER, extras);
+		if (status != Status.OK) {
+			display("Failed send register request");
+			return Status.FAILED;
+		}
+		display("Register request sent");
         
-        bluetooth.setEventHandler(this);
-
-        if (bluetooth.connectDeviceByAddress(_deviceAddr) != Status.OK) {
-            Logger.err("Failed to connect via bluetooth bridge");
-            return Status.FAILED;
-        }
-        
-        /* A successful connection means we should add this as a 
-         *  registered device */
-        if (_app.addRegisteredDevice(new KnownDevice(_deviceName, _deviceAddr)) 
-        		!= Status.OK) {
-        	Logger.err("Failed to add device to the registered device list");
-        	return Status.FAILED;
-        }
-        
+		_app = getAppRef();
         _app.saveRegisteredDevices();
 
         return Status.OK;
     }
     
     private Status disconnectDevice() {
-        IBluetoothBridge bluetooth = getBluetoothBridge();
-        if (bluetooth == null) {
-            Logger.err("Could not obtain bluetooth bridge");
-            return Status.FAILED;
-        }
-        
-        if (bluetooth.destroy() != Status.OK) {
-            Logger.err("Could not disconnect bluetooth device");
-        	return Status.FAILED;
-        }
+		Status status;
+		status = callService(ProjectSidekickService.MSG_DISCONNECT);
+		if (status != Status.OK) {
+			display("Failed to disconnectdevice");
+			return Status.FAILED;
+		}
+		display("Device has been disconnected");
         
         return Status.OK;
-    }
-
-    private Status sendRequest(String message) {
-        IBluetoothBridge bluetooth = getBluetoothBridge();
-        if (bluetooth == null) {
-            Logger.err("Could not obtain bluetooth bridge");
-            return Status.FAILED;
-        }
-
-        if (bluetooth.initialize(this, false) != Status.OK) {
-            Logger.err("Failed to initialize bluetooth bridge");
-            return Status.FAILED;
-        }
-        
-        bluetooth.setEventHandler(this);
-
-        if (bluetooth.broadcast(message.getBytes()) != Status.OK) {
-            Logger.err("Failed to send request through bluetooth bridge");
-            return Status.FAILED;
-        }
-
-        return Status.OK;
-
-    }
-
-    private IBluetoothBridge getBluetoothBridge() {
-        if (_app == null) {
-            _app = (ProjectSidekickApp) getApplication();
-        }
-
-        return _app.getBluetoothBridge();
-    }
-
-    private void display(String msg) {
-        Toast.makeText( this, msg,  Toast.LENGTH_SHORT).show();
-        return;
     }
     
     private void updateGuiToConnected() {
@@ -318,91 +385,6 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
         
         return;
     }
-
-	@Override
-	public void onConnected(String name, String address) {
-		new AsyncTask<Void, Void, Void> (){
-
-			@Override
-			protected Void doInBackground(Void... arg0) {
-				return null;
-			}
-
-			@Override
-			protected void onPostExecute(Void result) {
-				display("Connected!");
-				updateGuiToConnected();
-				_isConnected = true;
-				super.onPostExecute(result);
-			}
-			
-		}.execute();
-		return;
-	}
-
-	@Override
-	public void onDisconnected(String name, String address) {
-		new AsyncTask<Void, Void, Void> (){
-
-			@Override
-			protected Void doInBackground(Void... arg0) {
-				return null;
-			}
-
-			@Override
-			protected void onPostExecute(Void result) {
-				display("Disconnected!");
-				updateGuiToDisconnected();
-				_isConnected = false;
-				super.onPostExecute(result);
-			}
-			
-		}.execute();
-		return;
-	}
-
-	@Override
-	public void onDataReceived(byte[] data) {
-		new AsyncTask<byte[], Void, byte[]> (){
-
-			@Override
-			protected byte[] doInBackground(byte[]... params) {
-				return params[0];
-			}
-
-			@Override
-			protected void onPostExecute(byte[] data) {
-				Toast.makeText(AppModeConfigBeaconActivity.this, "Data Received: " + new String(data), Toast.LENGTH_SHORT).show();
-				
-				processResponse(data);
-				
-				super.onPostExecute(data);
-				return;
-			}
-			
-		}.execute(data);
-	}
-	
-
-    private void processResponse(byte[] data) {
-        String dataStr = new String(data);
-
-        if (dataStr.contains("BROUGHT")) {
-        	if (dataStr.length() <= 8) {
-        		Logger.warn("No devices found");
-        		return;
-        	}
-        	
-        	String devicesSubStr = dataStr.substring(8);
-        	
-        	Intent intent = new Intent(AppModeConfigBeaconActivity.this,
-        								AppModeBeaconMasterListActivity.class);
-        	intent.putExtra("MASTER_DVC_LIST", devicesSubStr);
-        	startActivity(intent);
-        }
-        	
-        return;
-    }
 	
 	private void reloadDeviceInfo() {
         TextView txvDvcInfo = (TextView) findViewById(R.id.txv_dvc_info);
@@ -411,9 +393,7 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
 	}
 
 	private void showRenameDeviceDialog(KnownDevice kd) {
-		if (_app == null) {
-			_app = (ProjectSidekickApp) getApplication();
-		}
+		_app = getAppRef();
 		
 		final EditText nameInput = new EditText(this);
 		final KnownDevice fkd = kd;
@@ -431,6 +411,7 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
 							
 							fkd.setName(nameStr);
 
+							_app = getAppRef();
 							if (_app.updateRegisteredDevice(fkd) != Status.OK) {
 								Logger.err("Device not registered. Renaming is meaningless.");
 							}
@@ -493,4 +474,46 @@ public class AppModeConfigBeaconActivity extends Activity implements BluetoothEv
 		
 		return;
 	}
+	
+	private ProjectSidekickApp getAppRef() {
+		return (ProjectSidekickApp) getApplication();
+	}
+
+	/* ********************* */
+	/* Private Inner Classes */
+	/* ********************* */
+	private ServiceConnection _serviceConnection = new ServiceConnection() {
+		@Override
+		public void onServiceDisconnected(ComponentName className) {
+			_service = null;
+			_bIsBound = false;
+			
+			return;
+		}
+		
+		@Override
+		public void onServiceConnected(ComponentName className, IBinder binder) {
+			_service = new Messenger(binder);
+			_bIsBound = true;
+			
+			return;
+		}
+	};
+	
+	private final BroadcastReceiver _receiver = new BroadcastReceiver() {
+	    public void onReceive(Context context, Intent intent) {
+	        String action = intent.getAction();
+	        // When discovery finds a device
+	        if (ProjectSidekickService.ACTION_CONNECTED.equals(action)) {
+	        	updateGuiToConnected();
+	        	_isConnected = true;
+	        } else if (ProjectSidekickService.ACTION_DISCONNECTED.equals(action)) {
+	        	updateGuiToDisconnected();
+	        	_isConnected = false;
+	        } else if (ProjectSidekickService.ACTION_DATA_RECEIVE.equals(action)) {
+	        	String msg = intent.getStringExtra("DATA");
+	        	display(msg);
+	        }
+	    }
+	};
 }

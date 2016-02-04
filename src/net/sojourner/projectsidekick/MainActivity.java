@@ -1,9 +1,6 @@
 package net.sojourner.projectsidekick;
 
 import net.sojourner.projectsidekick.ProjectSidekickApp.Mode;
-import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
-import net.sojourner.projectsidekick.types.Status;
-import net.sojourner.projectsidekick.utils.Logger;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
@@ -15,7 +12,6 @@ import android.widget.Toast;
 
 public class MainActivity extends Activity {
 	private ProjectSidekickApp _app = null;
-	private IBluetoothBridge _bluetooth = null;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -89,14 +85,6 @@ public class MainActivity extends Activity {
 		
 		dlgBuilder.create().show();
 		
-		return;
-	}
-	
-	private void startBluetoothForBeaconMode() {
-		if (_bluetooth.initialize(this, false) != Status.OK) {
-			Logger.err("Failed to initialize Bluetooth");
-			return;
-		}
 		return;
 	}
 	

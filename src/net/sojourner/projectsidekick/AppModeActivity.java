@@ -2,35 +2,35 @@ package net.sojourner.projectsidekick;
 
 import java.util.List;
 
-import net.sojourner.projectsidekick.interfaces.BluetoothEventHandler;
-import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
 import net.sojourner.projectsidekick.types.KnownDevice;
 import net.sojourner.projectsidekick.types.KnownDevice.DeviceStatus;
 import net.sojourner.projectsidekick.types.Status;
 import net.sojourner.projectsidekick.utils.Logger;
-import android.app.AlertDialog;
 import android.app.ListActivity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.os.AsyncTask;
+import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
-import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.Toast;
 
-public class AppModeActivity extends ListActivity implements BluetoothEventHandler {
-	private ProjectSidekickApp _app = (ProjectSidekickApp) getApplication();
-	private BluetoothAdapter _bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-	private IBluetoothBridge _bluetooth = null;
+public class AppModeActivity extends ListActivity {
+	private ProjectSidekickApp 	_app 				= (ProjectSidekickApp) getApplication();
+	private Messenger 			_service 			= null;
+	private BluetoothAdapter 	_bluetoothAdapter 	= BluetoothAdapter.getDefaultAdapter();
+	private boolean 			_bIsBound 			= false;
 	
 	//private List<KnownDevice> _registeredDevices = _app.getRegisteredDevices();
 	private ArrayAdapter<KnownDevice> _deviceListAdapter = null;
@@ -45,7 +45,7 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 			new View.OnClickListener() {
 				@Override
 				public void onClick(View v) {
-					startBluetooth();
+					startDiscovery();
 				}
 			}
 		);
@@ -100,18 +100,16 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 	}
 
 	@Override
-	protected void onPause() {
-		// TODO Auto-generated method stub
-		super.onPause();
-	}
-
-	@Override
 	protected void onResume() {
-		// TODO Auto-generated method stub
 		super.onResume();
 		
 		if (_app == null) {
 			_app = (ProjectSidekickApp) getApplication();
+		}
+		
+		if (!_bIsBound) {
+			Intent bindServiceIntent = new Intent(this, ProjectSidekickService.class);
+			bindService(bindServiceIntent, _serviceConnection, Context.BIND_AUTO_CREATE);
 		}
 		
 		if (_receiver != null) {
@@ -126,19 +124,24 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 	}
 
 	@Override
+	protected void onPause() {
+		super.onPause();
+	}
+
+	@Override
 	protected void onStop() {
 		/* Save the current list of registered devices */
 		if (_app != null) {
 			_app.saveRegisteredDevices();
 		}
-		
-		if (_bluetooth != null) {
-			_bluetooth.stopDeviceDiscovery();
-			_bluetooth.destroy();
-		}
 
 		if (_receiver != null) {
 			unregisterReceiver(_receiver);
+		}
+		
+		if (_bIsBound) {
+			unbindService(_serviceConnection);
+			_bIsBound = false;
 		}
 		
 		super.onStop();
@@ -162,22 +165,50 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 		return;
 	}
 	
-	private void startBluetooth() {
-		if (_app == null) {
-			_app = (ProjectSidekickApp) getApplication();
+	/* *************** */
+	/* Private Methods */
+	/* *************** */
+    private void display(String msg) {
+        Toast.makeText( this, msg,  Toast.LENGTH_SHORT).show();
+        return;
+    }
+
+    private Status callService(int msgId) {
+		return callService(msgId, null);
+    }
+    
+    private Status callService(int msgId, Bundle extras) {
+    	if (_service == null) {
+    		Logger.err("Service unavailable");
+    		return Status.FAILED;
+    	}
+    	
+    	if (!_bIsBound) {
+    		Logger.err("Service unavailable");
+    		return Status.FAILED;
+    	}
+    	
+		Message msg = Message.obtain(null, msgId, 0, 0);
+		msg.setData(extras);
+		
+		try {
+			_service.send(msg);
+		} catch (Exception e) {
+			Logger.err("Failed to call service: " + e.getMessage());
+			return Status.FAILED;
 		}
 		
-		if (_bluetooth == null) {
-			_bluetooth = _app.getBluetoothBridge();
-		}
-		
-		_bluetooth.setEventHandler(this);
-		
-		if (_bluetooth.initialize(this, false) != Status.OK) {
-			Logger.err("Failed to initialize Bluetooth");
+		return Status.OK;
+    }
+	
+	private void startDiscovery() {
+		Status status;
+		status = callService(ProjectSidekickService.MSG_START_DISCOVER);
+		if (status != Status.OK) {
+			display("Failed start service discovery");
 			return;
 		}
-		_bluetooth.startDeviceDiscovery();
+		display("Service discovery started");
 		
 		return;
 	}
@@ -191,11 +222,6 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 	            // Get the BluetoothDevice object from the Intent
 	            BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
 	            // Add the name and address to an array adapter to show in a ListView
-	            
-//	            String uuidStr = "";
-//	            for (ParcelUuid p : device.getUuids()) {
-//	            	uuidStr += p.getUuid().toString() + " ";
-//	            }
 	            addKnownDevice(device.getName(), device.getAddress(), true);
 	        }
 	        
@@ -206,66 +232,6 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 	        }
 	    }
 	};
-
-	@Override
-	public void onDataReceived(byte[] data) {
-		new AsyncTask<byte[], Void, byte[]> (){
-
-			@Override
-			protected byte[] doInBackground(byte[]... params) {
-				return params[0];
-			}
-
-			@Override
-			protected void onPostExecute(byte[] data) {
-				Toast.makeText(AppModeActivity.this, "Data Received: " + new String(data), Toast.LENGTH_SHORT).show();
-				
-				super.onPostExecute(data);
-				return;
-			}
-			
-		}.execute(data);
-		return;
-	}
-
-	@Override
-	public void onConnected(String name, String address) {
-		new AsyncTask<Void, Void, Void> (){
-
-			@Override
-			protected Void doInBackground(Void... arg0) {
-				return null;
-			}
-
-			@Override
-			protected void onPostExecute(Void result) {
-				Toast.makeText(AppModeActivity.this, "Connected!", Toast.LENGTH_SHORT).show();
-				
-				super.onPostExecute(result);
-			}
-			
-		}.execute();
-		return;
-	}
-
-	@Override
-	public void onDisconnected(String name, String address) {
-		new AsyncTask<Void, Void, Void> (){
-
-			@Override
-			protected Void doInBackground(Void... arg0) {
-				return null;
-			}
-
-			@Override
-			protected void onPostExecute(Void result) {
-				Toast.makeText(AppModeActivity.this, "Disconnected!", Toast.LENGTH_SHORT).show();
-				
-				super.onPostExecute(result);
-			}
-			
-		}.execute();
-	}
 
 	private void addKnownDevice(String name, String address, boolean isDiscovered) {
 		addKnownDevice(name, address, isDiscovered, false);
@@ -303,4 +269,25 @@ public class AppModeActivity extends ListActivity implements BluetoothEventHandl
 		
 		return;
 	}
+
+	/* ********************* */
+	/* Private Inner Classes */
+	/* ********************* */
+	private ServiceConnection _serviceConnection = new ServiceConnection() {
+		@Override
+		public void onServiceDisconnected(ComponentName className) {
+			_service = null;
+			_bIsBound = false;
+			
+			return;
+		}
+		
+		@Override
+		public void onServiceConnected(ComponentName className, IBinder binder) {
+			_service = new Messenger(binder);
+			_bIsBound = true;
+			
+			return;
+		}
+	};
 }
