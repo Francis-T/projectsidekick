@@ -247,7 +247,7 @@ public class AppModeActivity extends ListActivity {
         int iCount = adapter.getCount();
         for (int i = 0; i < iCount; i++) {
         	KnownDevice kd = adapter.getItem(i);
-        	if (kd.getAddress().equals(address)) {
+        	if (kd.addressMatches(address)) {
         		Logger.info("Not adding duplicate entry for " + address);
         		kd.setStatus(dvcStatus);
                 adapter.notifyDataSetChanged();

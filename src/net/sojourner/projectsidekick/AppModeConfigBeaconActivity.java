@@ -46,6 +46,9 @@ public class AppModeConfigBeaconActivity extends Activity {
         	return;
         }
         
+        /* Get reference to the underlying Application */
+		_app = getAppRef();
+        
         /* Expect the Device Name and Address to be passed on to
          *  this activity from the previous one */
         _deviceName = b.getString("DEVICE_NAME");
@@ -62,7 +65,7 @@ public class AppModeConfigBeaconActivity extends Activity {
         
         reloadDeviceInfo();
 
-        Button btnConnect = 
+        final Button btnConnect = 
             (Button) findViewById(R.id.btn_connect);
         btnConnect.setOnClickListener(
             new View.OnClickListener() {
@@ -83,13 +86,17 @@ public class AppModeConfigBeaconActivity extends Activity {
             }
         );
 
-        Button btnRename  = 
+        final Button btnRename  = 
             (Button) findViewById(R.id.btn_rename);
+        if (_app.findRegisteredDevice(_deviceAddr) != null) {
+        	btnRename.setEnabled(true);
+        } else {
+        	btnRename.setEnabled(false);
+        }
         btnRename.setOnClickListener(
             new View.OnClickListener() {
 				@Override
 				public void onClick(View v) {
-					_app = getAppRef();
 					KnownDevice kd = _app.findRegisteredDevice(_deviceAddr);
 					if (kd == null) {
 						display( _deviceName + " has not yet been registered");
@@ -100,14 +107,30 @@ public class AppModeConfigBeaconActivity extends Activity {
 				}
             }
         );
+        
+        final Button btnRegister =
+        	(Button) findViewById(R.id.btn_register);
+        btnRegister.setOnClickListener(
+        	new View.OnClickListener() {
+				@Override
+				public void onClick(View arg0) {
+					if (registerDevice() != Status.OK) {
+						display("Registration Failed!");
+					}
+					
+					btnRename.setEnabled(true);
+					
+					return;
+				}
+			}
+        );
 
-        Button btnDelete  = 
+        final Button btnDelete  = 
             (Button) findViewById(R.id.btn_delete);
         btnDelete.setOnClickListener(
             new View.OnClickListener() {
 				@Override
 				public void onClick(View v) {
-					_app = getAppRef();
 					KnownDevice kd = _app.findRegisteredDevice(_deviceAddr);
 					if (kd == null) {
 						display(_deviceName + " has not yet been registered");
@@ -119,58 +142,22 @@ public class AppModeConfigBeaconActivity extends Activity {
             }
         );
 
-//        Button btnReqDiscover = 
-//            (Button) findViewById(R.id.btn_req_discover);
-//        btnReqDiscover.setOnClickListener(
-//            new View.OnClickListener() {
-//				@Override
-//				public void onClick(View v) {
-//                    String reqStr = "DISCOVER";
-//                    if (sendRequest(reqStr) != Status.OK) {
-//                        display("Request discovery failed!");
-//                    }
-//                    return;
-//				}
-//            }
-//        );
-
-//        Button btnReqDiscoverList = 
-//            (Button) findViewById(R.id.btn_req_discover_list);
-//        btnReqDiscoverList.setOnClickListener(
-//            new View.OnClickListener() {
-//				@Override
-//				public void onClick(View v) {
-//                    String reqStr = "LIST DISCOVERED";
-//                    if (sendRequest(reqStr) != Status.OK) {
-//                        display("Request discovered list failed!");
-//                    }
-//
-//                    /* Present a progress bar while we wait for the 
-//                     *  list to be received */
-//                    // TODO
-//                    return;
-//				}
-//            }
-//        );
-
-//        Button btnReqBringList = 
-//            (Button) findViewById(R.id.btn_req_bring_list);
-//        btnReqBringList.setOnClickListener(
-//            new View.OnClickListener() {
-//				@Override
-//				public void onClick(View v) {
-//                    String reqStr = "LIST BROUGHT";
-//                    if (sendRequest(reqStr) != Status.OK) {
-//                        display("Request brought list failed!");
-//                    }
-//
-//                    /* Present a progress bar while we wait for the 
-//                     *  list to be received */
-//                    // TODO
-//                    return;
-//				}
-//            }
-//        );
+        final Button btnReqGuardList = 
+            (Button) findViewById(R.id.btn_req_guard_list);
+        btnReqGuardList.setOnClickListener(
+            new View.OnClickListener() {
+				@Override
+				public void onClick(View v) {
+					requestGuardList();
+					
+                    /* Present a progress bar while we wait for the 
+                     *  list to be retrieved */
+					/* TODO */
+					
+                    return;
+				}
+            }
+        );
 
 		
 		if (!_bIsBound) {
@@ -190,6 +177,7 @@ public class AppModeConfigBeaconActivity extends Activity {
 			filter.addAction(ProjectSidekickService.ACTION_CONNECTED);
 			filter.addAction(ProjectSidekickService.ACTION_DATA_RECEIVE);
 			filter.addAction(ProjectSidekickService.ACTION_DISCONNECTED);
+			filter.addAction(ProjectSidekickService.ACTION_LIST_RECEIVED);
 			registerReceiver(_receiver, filter);
 		}
 		
@@ -288,20 +276,36 @@ public class AppModeConfigBeaconActivity extends Activity {
 	
     private Status connectToDevice() {
 		Status status;
-		
 		status = callService(ProjectSidekickService.MSG_SET_AS_MOBILE);
 		if (status != Status.OK) {
 			display("Failed set role to MOBILE");
 			return Status.FAILED;
 		}
-		display("Role set to MOBILE");
 		
 		status = callService(ProjectSidekickService.MSG_START_SETUP);
 		if (status != Status.OK) {
 			display("Failed start SETUP Mode");
 			return Status.FAILED;
 		}
-		display("Started SETUP Mode");
+
+		Bundle extras = new Bundle();
+		extras.putString("DEVICE_ADDR", _deviceAddr);
+		status = callService(ProjectSidekickService.MSG_CONNECT, extras);
+		if (status != Status.OK) {
+			display("Failed attempt connection");
+			return Status.FAILED;
+		}
+
+        return Status.OK;
+    }
+    
+    private Status registerDevice() {
+    	if (!_isConnected) {
+    		display("Not yet connected!");
+    		return Status.FAILED;
+    	}
+    	
+		Status status;
 
 		Bundle extras = new Bundle();
 		extras.putString("DEVICE_ADDR", _deviceAddr);
@@ -313,9 +317,30 @@ public class AppModeConfigBeaconActivity extends Activity {
 		display("Register request sent");
         
 		_app = getAppRef();
+		_app.addRegisteredDevice(new KnownDevice(_deviceName, _deviceAddr));
         _app.saveRegisteredDevices();
+        
+    	return Status.OK;
+    }
+    
+    private Status requestGuardList() {
+    	if (!_isConnected) {
+    		display("Not yet connected!");
+    		return Status.FAILED;
+    	}
+    	
+		Status status;
 
-        return Status.OK;
+		Bundle extras = new Bundle();
+		extras.putString("DEVICE_ADDR", _deviceAddr);
+		status = callService(ProjectSidekickService.MSG_SEND_GET_LIST, extras);
+		if (status != Status.OK) {
+			display("Failed send retrieve guard list request");
+			return Status.FAILED;
+		}
+		display("Retrieving guard list...");
+    	
+    	return Status.OK;
     }
     
     private Status disconnectDevice() {
@@ -333,27 +358,23 @@ public class AppModeConfigBeaconActivity extends Activity {
     private void updateGuiToConnected() {
         Button btnConnect = 
                 (Button) findViewById(R.id.btn_connect);
-        btnConnect.setText("Disconnect from Device");
+        btnConnect.setText("Disconnect");
+        
+        Button btnRegister =
+            	(Button) findViewById(R.id.btn_register);
+        btnRegister.setEnabled(true);
         
         Button btnRename  = 
                 (Button) findViewById(R.id.btn_rename);
         btnRename.setEnabled(true);
         
-        Button btnDelete  = 
-            (Button) findViewById(R.id.btn_delete);
-        btnDelete.setEnabled(true);
-
-//        Button btnReqDiscover = 
-//            (Button) findViewById(R.id.btn_req_discover);
-//        btnReqDiscover.setEnabled(true);
-//        
-//        Button btnReqDiscoverList = 
-//            (Button) findViewById(R.id.btn_req_discover_list);
-//        btnReqDiscoverList.setEnabled(true);
+//        Button btnDelete  = 
+//            (Button) findViewById(R.id.btn_delete);
+//        btnDelete.setEnabled(true);
         
-        Button btnReqBringList = 
-            (Button) findViewById(R.id.btn_req_bring_list);
-        btnReqBringList.setEnabled(true);
+        Button btnReqGuardList = 
+            (Button) findViewById(R.id.btn_req_guard_list);
+        btnReqGuardList.setEnabled(true);
         
         return;
     }
@@ -361,27 +382,23 @@ public class AppModeConfigBeaconActivity extends Activity {
     private void updateGuiToDisconnected() {
         Button btnConnect = 
                 (Button) findViewById(R.id.btn_connect);
-        btnConnect.setText("Connect to Device");
+        btnConnect.setText("Connect");
+        
+        Button btnRegister =
+            	(Button) findViewById(R.id.btn_register);
+        btnRegister.setEnabled(false);
         
         Button btnRename  = 
                 (Button) findViewById(R.id.btn_rename);
         btnRename.setEnabled(false);
         
-        Button btnDelete  = 
-            (Button) findViewById(R.id.btn_delete);
-        btnDelete.setEnabled(false);
-
-//        Button btnReqDiscover = 
-//            (Button) findViewById(R.id.btn_req_discover);
-//        btnReqDiscover.setEnabled(false);
-//        
-//        Button btnReqDiscoverList = 
-//            (Button) findViewById(R.id.btn_req_discover_list);
-//        btnReqDiscoverList.setEnabled(false);
+//        Button btnDelete  = 
+//            (Button) findViewById(R.id.btn_delete);
+//        btnDelete.setEnabled(false);
         
-        Button btnReqBringList = 
-            (Button) findViewById(R.id.btn_req_bring_list);
-        btnReqBringList.setEnabled(false);
+        Button btnReqGuardList = 
+            (Button) findViewById(R.id.btn_req_guard_list);
+        btnReqGuardList.setEnabled(false);
         
         return;
     }
@@ -513,6 +530,12 @@ public class AppModeConfigBeaconActivity extends Activity {
 	        } else if (ProjectSidekickService.ACTION_DATA_RECEIVE.equals(action)) {
 	        	String msg = intent.getStringExtra("DATA");
 	        	display(msg);
+	        } else if (ProjectSidekickService.ACTION_LIST_RECEIVED.equals(action)) {
+	        	Intent listIntent 
+	        		= new Intent(AppModeConfigBeaconActivity.this, 
+	        				AppModeBeaconMasterListActivity.class);
+	        	listIntent.putExtra("DEVICES", intent.getStringArrayExtra("DEVICES"));
+	        	startActivity(listIntent);
 	        }
 	    }
 	};

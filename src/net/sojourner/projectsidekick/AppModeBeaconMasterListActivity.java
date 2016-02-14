@@ -30,8 +30,8 @@ public class AppModeBeaconMasterListActivity extends ListActivity implements Blu
         setListAdapter(_masterListAdapter);
 
         Intent intent = getIntent();
-        String masterListStr = intent.getStringExtra("MASTER_DVC_LIST");
-        parseMasterList(masterListStr);
+        String masterListArr[] = intent.getStringArrayExtra("DEVICES");
+        parseMasterList(masterListArr);
 		
 		ListView listGui = getListView();
 		listGui.setOnItemClickListener(
@@ -67,40 +67,15 @@ public class AppModeBeaconMasterListActivity extends ListActivity implements Blu
         super.onResume();
         return;
     }
-
-    private Status sendRequest(String message) {
-        IBluetoothBridge bluetooth = getBluetoothBridge();
-        if (bluetooth == null) {
-            Logger.err("Could not obtain bluetooth bridge");
-            return Status.FAILED;
-        }
-
-        if (bluetooth.initialize(this, false) != Status.OK) {
-            Logger.err("Failed to initialize bluetooth bridge");
-            return Status.FAILED;
-        }
-        
-        bluetooth.setEventHandler(this);
-
-        if (bluetooth.broadcast(message.getBytes()) != Status.OK) {
-            Logger.err("Failed to send request through bluetooth bridge");
-            return Status.FAILED;
-        }
-
-        return Status.OK;
-
-    }
 	
-	private void parseMasterList(String masterListStr) {
+	private void parseMasterList(String masterList[]) {
 		if (_masterListAdapter == null) {
 			Logger.err("Master list adapter is unavailable");
 			return;
 		}
 		
-		String masterListPart[] = masterListStr.split(",");
-		
-		for (String s : masterListPart) {
-			_masterListAdapter.add(s);
+		for (String s : masterList) {
+			_masterListAdapter.add(s.replace("|", "\n"));
 		}
 		_masterListAdapter.notifyDataSetChanged();
 		
@@ -196,14 +171,14 @@ public class AppModeBeaconMasterListActivity extends ListActivity implements Blu
 			.setPositiveButton("Yes", new DialogInterface.OnClickListener() {
 						@Override
 						public void onClick(DialogInterface dialog, int which) {
-							if (sendRequest("LEAVE " + deviceAddr) != Status.OK) {
-								display("Failed to send request to beacon");
-								return;
-							}
-							
-							_masterListAdapter.remove(deviceAddr);
-							
-							display("Deleted!");
+//							if (sendRequest("LEAVE " + deviceAddr) != Status.OK) {
+//								display("Failed to send request to beacon");
+//								return;
+//							}
+//							
+//							_masterListAdapter.remove(deviceAddr);
+//							
+//							display("Deleted!");
 							return;
 						}
 					})

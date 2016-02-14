@@ -10,19 +10,19 @@
         android:layout_height="100dip"
         android:orientation="horizontal">
 	    <ImageButton
-	        android:id="@+id/btn_allow_discovery"
+	        android:id="@+id/btn_start_guard_mode"
 	        android:layout_width="0dip"
 	        android:layout_height="match_parent"
 	        android:layout_weight="1"
-	        android:src="@android:drawable/ic_menu_share"
-	        android:contentDescription="Allow Discovery" />
+	        android:src="@android:drawable/ic_lock_lock"
+	        android:contentDescription="Start Guard Mode" />
 	    
 	    <ImageButton
 	        android:id="@+id/btn_mode"
 	        android:layout_width="0dip"
 	        android:layout_height="match_parent"
 	        android:layout_weight="1"
-	        android:src="@android:drawable/ic_menu_send"
+	        android:src="@android:drawable/ic_lock_power_off"
 	        android:contentDescription="Set Mode" />
         
         <ImageButton
@@ -33,6 +33,12 @@
             android:src="@android:drawable/ic_menu_mapmode"
             android:contentDescription="Start Discovery" />
     </LinearLayout>
+    
+    <TextView
+            android:id="@+id/txv_state"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="State: UNKNOWN" />
     
     <ListView
         android:id="@android:id/list"

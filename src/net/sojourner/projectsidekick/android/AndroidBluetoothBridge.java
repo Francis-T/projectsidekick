@@ -355,6 +355,69 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		return Status.OK;
 	}
 
+	
+	public ArrayList<String> getDiscoveredDeviceNames() {
+		ArrayList<String> devices = new ArrayList<String>();
+
+		for (String key : _discoveredDevices.keySet()) {
+			if (key != null) {
+				devices.add(key);
+			}
+		}
+		return devices;
+	}
+	
+	public ArrayList<String> getPairedDeviceAddresses() {
+		ArrayList<String> devices = new ArrayList<String>();
+
+		_pairedDevices.clear();
+		Set<BluetoothDevice> bondedDevices = _bluetoothAdapter.getBondedDevices();
+		if (bondedDevices.size() > 0) {
+			for (BluetoothDevice device : bondedDevices) {
+				_pairedDevices.put(device.getName(), device.getAddress());
+				devices.add(device.getAddress());
+			}
+		}
+		return devices;
+	}
+	
+	public ArrayList<String> getPairedDeviceNames() {
+		ArrayList<String> devices = new ArrayList<String>();
+
+		_pairedDevices.clear();
+		Set<BluetoothDevice> bondedDevices = _bluetoothAdapter.getBondedDevices();
+		if (bondedDevices.size() > 0) {
+			for (BluetoothDevice device : bondedDevices) {
+				_pairedDevices.put(device.getName(), device.getAddress());
+				devices.add(device.getName());
+			}
+		}
+		return devices;
+	}
+
+	public ArrayList<String> getConnectedDeviceNames() {
+		ArrayList<String> devices = new ArrayList<String>();
+		Set<String> connectedDevices = _currentConnections.keySet();
+
+		if (connectedDevices.size() > 0) {
+			for (String device : connectedDevices) {
+				BluetoothConnection c = _currentConnections.get(device);
+				devices.add(c.getDeviceName() + "(" + device + ")");
+			}
+		}
+		return devices;
+	}
+
+
+	@Override
+	public boolean isReady() {
+		if (_bluetoothAdapter.isEnabled()) {
+			return true;
+		}
+		
+		return false;
+	}
+
 	/*********************/
 	/** Private Methods **/
 	/*********************/
@@ -507,47 +570,6 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		
 		return Status.OK;
 	}
-
-	/********************************************************/
-	/** Private Utility Methods for Accessing Device Lists **/
-	/********************************************************/
-	public ArrayList<String> getDiscoveredDeviceNames() {
-		ArrayList<String> devices = new ArrayList<String>();
-
-		for (String key : _discoveredDevices.keySet()) {
-			if (key != null) {
-				devices.add(key);
-			}
-		}
-		return devices;
-	}
-	
-	public ArrayList<String> getPairedDeviceNames() {
-		ArrayList<String> devices = new ArrayList<String>();
-
-		_pairedDevices.clear();
-		Set<BluetoothDevice> bondedDevices = _bluetoothAdapter.getBondedDevices();
-		if (bondedDevices.size() > 0) {
-			for (BluetoothDevice device : bondedDevices) {
-				_pairedDevices.put(device.getName(), device.getAddress());
-				devices.add(device.getName());
-			}
-		}
-		return devices;
-	}
-
-	public ArrayList<String> getConnectedDeviceNames() {
-		ArrayList<String> devices = new ArrayList<String>();
-		Set<String> connectedDevices = _currentConnections.keySet();
-
-		if (connectedDevices.size() > 0) {
-			for (String device : connectedDevices) {
-				BluetoothConnection c = _currentConnections.get(device);
-				devices.add(c.getDeviceName() + "(" + device + ")");
-			}
-		}
-		return devices;
-	}
 	
 	private void clearDeviceLists() {
 		
@@ -582,6 +604,29 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		
 		return;
 	}
+
+	private static String getReversedMacAddress(String address) {
+		String newAddr = "";
+
+		int targIdx = 0;
+		int offset = 2;
+
+		targIdx = address.length() - offset;
+		while (targIdx >= 0) {
+
+			newAddr += address.charAt(targIdx++);
+			newAddr += address.charAt(targIdx);
+
+			offset += 3;
+			targIdx = address.length() - offset;
+
+			if (targIdx >= 0) {
+				newAddr += ":";
+			}
+		}
+
+		return newAddr;
+	}
 	/***************************/
 	/** Private Inner Classes **/
 	/***************************/
@@ -614,7 +659,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		private InputStream _inputStream = null;
 		private OutputStream _outputStream = null;
 
-		private String _name = "";
+		private String _remoteName = "";
 		private String _remoteAddress = "";
 		
 		public BluetoothConnection(BluetoothSocket socket) {
@@ -624,7 +669,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			}
 
 			_socket = socket;
-			_name = _socket.getRemoteDevice().getName();
+			_remoteName = _socket.getRemoteDevice().getName();
 			_remoteAddress = _socket.getRemoteDevice().getAddress();
 			
 			try {
@@ -649,7 +694,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		}
 		
 		public String getDeviceName() {
-			return this._name;
+			return this._remoteName;
 		}
 		
 		public void run() {
@@ -659,10 +704,14 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 				return;
 			}
 			
+			correctRemoteDeviceInfo(_socket);
+			
 			/* Notify the event handler that we've connected */
 			if (_eventHandler != null) {
-				_eventHandler.onConnected(_name, _remoteAddress);
+				_eventHandler.onConnected(_remoteName, _remoteAddress);
 			}
+			
+			Logger.info("New connection started: " + _remoteName + "/" + _remoteAddress);
 			
 			while (_state == BTState.CONNECTED) {
 				try {
@@ -716,7 +765,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			
 			/* Notify the event handler that we've connected */
 			if (_eventHandler != null) {
-				_eventHandler.onDisconnected(_name, _remoteAddress);
+				_eventHandler.onDisconnected(_remoteName, _remoteAddress);
 			} else {
 				Logger.warn("No event handlers to notify!");
 			}
@@ -779,6 +828,56 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			return;
 		}
 		
+		private void correctRemoteDeviceInfo(BluetoothSocket socket) {
+			if (_bluetoothAdapter == null) {
+				Logger.err("BluetoothAdapter Unavailable");
+				return;
+			}
+			
+			String deviceAddr = socket.getRemoteDevice().getAddress();
+			/* Match the device address against our lists of paired,
+			 * 	discovered, and connected devices */
+			if (_pairedDevices.containsValue(deviceAddr)) {
+				_remoteName = retrieveName(deviceAddr, _pairedDevices);
+				return;
+			}
+			if (_discoveredDevices.containsKey(deviceAddr)) {
+				_remoteName = retrieveName(deviceAddr, _pairedDevices);
+				return;
+			}
+			
+			Logger.warn("Not matched against current lists of devices. " +
+						"Attempting with a reversed MAC address instead...");
+			
+			String reversedAddr = getReversedMacAddress(deviceAddr);
+			/* If no matches have been found yet, attempt to use the
+			 * 	reversed mac address instead */
+			if (_pairedDevices.containsValue(reversedAddr)) {
+				_remoteAddress = reversedAddr;
+				_remoteName = retrieveName(reversedAddr, _pairedDevices);
+				return;
+			}
+			if (_discoveredDevices.containsValue(reversedAddr)) {
+				_remoteAddress = reversedAddr;
+				_remoteName = retrieveName(reversedAddr, _discoveredDevices);
+				return;
+			}
+			
+			Logger.err("No matches found for address: " + deviceAddr);
+			
+			return;
+		}
+		
+		private String retrieveName(String address, Map<String, String> deviceMap) {
+			for (Map.Entry<String, String> entry : deviceMap.entrySet()) {
+				String entryAddress = entry.getValue();
+				if (entryAddress.equals(address)) {
+					return entry.getKey();
+				}
+			}
+			
+			return "";
+		}
 	}
 	
 	private class BluetoothListenerThread extends Thread {
@@ -813,7 +912,8 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 					if (connSocket != null) {
 						synchronized (AndroidBluetoothBridge.this) {
 							Logger.info("Incoming connection from: " + 
-										connSocket.getRemoteDevice().getName());
+										connSocket.getRemoteDevice().getName() + "/" +
+										connSocket.getRemoteDevice().getAddress());
 							Logger.info("Current state: " + _state.toString());
 							switch (_state) {
 								case LISTENING:
@@ -888,6 +988,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		private BluetoothSocket _bluetoothSocket = null;
 		private BluetoothDevice _bluetoothDevice = null;
 		private String _deviceAddress = "";
+		private String _deviceName = "";
 		private boolean _useSecureRFComm = false;
 		
 		public BluetoothConnectThread(BluetoothDevice device, boolean secure) {
@@ -936,7 +1037,8 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 				// This is a blocking call and will only return on a
 				// successful connection or an exception
 				if (_bluetoothSocket != null) {
-					Logger.warn("Attempting connection...");
+					Logger.info("Attempting connection to " +
+									_deviceName + "/" + _deviceAddress);
 					_bluetoothSocket.connect();
 					
 					if (!_bluetoothSocket.isConnected()) {
@@ -996,19 +1098,5 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			}
 			Logger.info("Finished cancelling ConnectThread.");
 		}
-		
-		private String getDeviceAddress() {
-			return _deviceAddress;
-		}
-		
-	}
-
-	@Override
-	public boolean isReady() {
-		if (_bluetoothAdapter.isEnabled()) {
-			return true;
-		}
-		
-		return false;
 	}
 }

@@ -19,47 +19,68 @@
         android:text="Name: \nAddress: \nOther Info: \n"
         android:textSize="26sp"
         android:layout_marginBottom="10dp" />
-
-    <Button
-        android:id="@+id/btn_connect"
+    
+    <LinearLayout 
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:enabled="true"
-        android:text="Connect to Device" />
-
-    <Button
-        android:id="@+id/btn_rename"
+        android:orientation="horizontal">
+	    <Button
+	        android:id="@+id/btn_connect"
+	        android:layout_weight="1"
+	        android:layout_width="0dip"
+	        android:layout_height="wrap_content"
+	        android:enabled="true"
+	        android:text="Connect" />
+	
+	    <Button
+	        android:id="@+id/btn_register"
+	        android:layout_weight="1"
+	        android:layout_width="0dip"
+	        android:layout_height="wrap_content"
+	        android:enabled="false"
+	        android:text="Register" />
+    </LinearLayout>
+    
+    <LinearLayout 
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:enabled="false"
-        android:text="Rename Device" />
+        android:orientation="horizontal">
+	    <Button
+	        android:id="@+id/btn_rename"
+	        android:layout_weight="1"
+	        android:layout_width="0dip"
+	        android:layout_height="wrap_content"
+	        android:enabled="false"
+	        android:text="Rename" />
+	
+	    <Button
+	        android:id="@+id/btn_delete"
+	        android:layout_weight="1"
+	        android:layout_width="0dip"
+	        android:layout_height="wrap_content"
+	        android:enabled="true"
+	        android:text="Delete" />
+    </LinearLayout>
 
-    <Button
-        android:id="@+id/btn_delete"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:enabled="false"
-        android:text="Delete Device" />
-
-    <Button
+    <!--Button
         android:id="@+id/btn_req_discover"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:enabled="false"
-        android:text="Request Device Discovery" />
+        android:text="Request Device Discovery" /-->
 
-    <Button
+    <!--Button
         android:id="@+id/btn_req_discover_list"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:enabled="false"
-        android:text="List Discovered Devices" />
+        android:text="List Discovered Devices" /-->
 
     <Button
-        android:id="@+id/btn_req_bring_list"
+        android:id="@+id/btn_req_guard_list"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:enabled="false"
-        android:text="List Brought Devices" />
+        android:text="List Guarded Devices" />
 
 </LinearLayout>

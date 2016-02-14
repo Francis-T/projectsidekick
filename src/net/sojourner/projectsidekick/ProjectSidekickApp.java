@@ -51,7 +51,7 @@ public class ProjectSidekickApp extends Application {
     public Status addRegisteredDevice(KnownDevice device) {
     	/* Check if we already have this device in our list */
     	for (KnownDevice kd : _registeredDevices) {
-    		if (kd.getAddress().equals(device.getAddress())) {
+    		if (kd.addressMatches(device.getAddress())) {
     			Logger.warn("Device already registered");
     			return Status.OK;
     		}
@@ -68,7 +68,7 @@ public class ProjectSidekickApp extends Application {
     public Status updateRegisteredDevice(KnownDevice device) {
     	/* Check if we already have this device in our list */
     	for (KnownDevice kd : _registeredDevices) {
-    		if (kd.getAddress().equals(device.getAddress())) {
+    		if (kd.addressMatches(device.getAddress())) {
     			Logger.warn("Device found");
     			
     			/* Simply update our registered device's name */
@@ -98,7 +98,7 @@ public class ProjectSidekickApp extends Application {
     
     public KnownDevice findRegisteredDevice(String address) {
     	for (KnownDevice kd : _registeredDevices) {
-    		if (kd.getAddress().equals(address)) {
+    		if (kd.addressMatches(address)) {
     			return kd;
     		}
     	}

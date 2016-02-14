@@ -11,7 +11,6 @@ import net.sojourner.projectsidekick.types.Status;
 import net.sojourner.projectsidekick.utils.Logger;
 import android.app.ListActivity;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -27,16 +26,20 @@ import android.os.Messenger;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.ImageButton;
+import android.widget.ListView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 public class BeaconModeActivity extends ListActivity {
 	private ProjectSidekickApp 			_app 				= null;
 	private Messenger 					_service 			= null;
 	private BluetoothAdapter			_bluetoothAdapter 	= BluetoothAdapter.getDefaultAdapter();
-	private boolean			 			_isActive 			= false;
 	private boolean 					_bIsBound 			= false;
-	private boolean 					_bIsSettingUp 		= false;
 	private ArrayAdapter<GuardedItem> 	_guardedListAdapter	= null;
+	private BeaconState					_eBState			= BeaconState.INACTIVE;
+	private TextView					_txvState			= null;
+	
+	private enum BeaconState { INACTIVE, SETUP, GUARD };
 	
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -52,30 +55,42 @@ public class BeaconModeActivity extends ListActivity {
 			= new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
 		startActivityForResult(discoverableIntent, ProjectSidekickApp.REQUEST_BLUETOOTH_DISCOVERABLE);
 		
-		final ImageButton btnAllowDiscover 
-			= (ImageButton) findViewById(R.id.btn_allow_discovery);
-		btnAllowDiscover.setColorFilter(Color.RED);
-		btnAllowDiscover.setOnClickListener(
+		final ImageButton btnStartGuardMode 
+			= (ImageButton) findViewById(R.id.btn_start_guard_mode);
+		btnStartGuardMode.setColorFilter(Color.RED);
+		btnStartGuardMode.setOnClickListener(
 			new View.OnClickListener() {
 				@Override
 				public void onClick(View v) {
 					Status status = Status.FAILED;
-					if (!_isActive) {
+					if (getState() == BeaconState.INACTIVE) {
 						status = callService(ProjectSidekickService.MSG_START_GUARD);
 						if (status != Status.OK) {
 							display("Failed to activate GUARD Mode");
 							return;
 						}
+						
+						ImageButton btn = (ImageButton) v;
+						btn.setImageResource(android.R.drawable.ic_lock_idle_lock);
+						btn.setColorFilter(Color.GREEN);
+						
+						//_isActive = true;
+						setState(BeaconState.GUARD);
 						display("GUARD Mode has been activated");
-						_isActive = true;
-					} else {
+					} else if (getState() == BeaconState.GUARD) {
 						status = callService(ProjectSidekickService.MSG_STOP);
 						if (status != Status.OK) {
 							display("Failed to deactivate GUARD Mode");
 							return;
 						}
+						
+						ImageButton btn = (ImageButton) v;
+						btn.setImageResource(android.R.drawable.ic_lock_lock);
+						btn.setColorFilter(Color.RED);
+						
+						//_isActive = false;
+						setState(BeaconState.INACTIVE);
 						display("GUARD Mode has been deactivated");
-						_isActive = false;
 					}
 					return;
 				}
@@ -84,12 +99,13 @@ public class BeaconModeActivity extends ListActivity {
 
 		ImageButton btnMode
 			= (ImageButton) findViewById(R.id.btn_mode);
+		btnMode.setColorFilter(Color.RED);
 		btnMode.setOnClickListener(
 			new View.OnClickListener() {
 				@Override
 				public void onClick(View v) {
 					Status status = Status.FAILED;
-					if (!_bIsSettingUp) {
+					if (getState() == BeaconState.INACTIVE) {
 						status = callService(ProjectSidekickService.MSG_SET_AS_SIDEKICK);
 						if (status != Status.OK) {
 							display("Failed to set beacon to Anti-Loss Mode.");
@@ -102,17 +118,25 @@ public class BeaconModeActivity extends ListActivity {
 							display("Failed to start SETUP Mode.");
 							return;
 						}
+						
+						ImageButton btn = (ImageButton) v;
+						btn.setColorFilter(Color.GREEN);
+
+						setState(BeaconState.SETUP);
 						display("SETUP Mode Started.");
-						_bIsSettingUp = true;
-					} else {
+					} else if (getState() == BeaconState.SETUP) {
 
 						status = callService(ProjectSidekickService.MSG_STOP);
 						if (status != Status.OK) {
 							display("Failed to Stop.");
 							return;
 						}
+						
+						ImageButton btn = (ImageButton) v;
+						btn.setColorFilter(Color.RED);
+
+						setState(BeaconState.INACTIVE);
 						display("Stopped.");
-						_bIsSettingUp = false;
 					}
 					
 					return;
@@ -120,8 +144,17 @@ public class BeaconModeActivity extends ListActivity {
 			}
 		);
 		
+		_txvState = (TextView) findViewById(R.id.txv_state);
+		
 		_guardedListAdapter = new ArrayAdapter<GuardedItem>(this, android.R.layout.simple_list_item_1);
 		setListAdapter(_guardedListAdapter);
+		
+		restoreGuardedItems();
+		
+		if (!_bIsBound) {
+			Intent bindServiceIntent = new Intent(this, ProjectSidekickService.class);
+			bindService(bindServiceIntent, _serviceConnection, Context.BIND_AUTO_CREATE);
+		}
 
 		return;
 	}
@@ -137,11 +170,6 @@ public class BeaconModeActivity extends ListActivity {
 			filter.addAction(ProjectSidekickService.ACTION_UPDATE_LOST);
 			filter.addAction(ProjectSidekickService.ACTION_UPDATE_FOUND);
 			registerReceiver(_receiver, filter);
-		}
-		
-		if (!_bIsBound) {
-			Intent bindServiceIntent = new Intent(this, ProjectSidekickService.class);
-			bindService(bindServiceIntent, _serviceConnection, Context.BIND_AUTO_CREATE);
 		}
 		
 		return;
@@ -165,16 +193,22 @@ public class BeaconModeActivity extends ListActivity {
 	
 	@Override
 	protected void onStop() {
-		if (_bIsBound) {
-			unbindService(_serviceConnection);
-			_bIsBound = false;
-		}
-		
 		if (_receiver != null) {
 			unregisterReceiver(_receiver);
 		}
 		
 		super.onStop();
+		return;
+	}
+
+	@Override
+	protected void onDestroy() {
+		if (_bIsBound) {
+			unbindService(_serviceConnection);
+			_bIsBound = false;
+		}
+		
+		super.onDestroy();
 		return;
 	}
 
@@ -241,7 +275,7 @@ public class BeaconModeActivity extends ListActivity {
     public Status addRegisteredDevice(KnownDevice device) {
     	/* Check if we already have this device in our list */
     	for (KnownDevice kd : _registeredDevices) {
-    		if (kd.getAddress().equals(device.getAddress())) {
+    		if (kd.addressMatches(device.getAddress())) {
     			Logger.warn("Device already registered");
     			return Status.OK;
     		}
@@ -291,6 +325,42 @@ public class BeaconModeActivity extends ListActivity {
 		
 		return Status.OK;
 	}
+	
+	private BeaconState getState() {
+		return _eBState;
+	}
+	
+	private void setState(BeaconState state) {
+		_eBState = state;
+		
+		if (_txvState != null) {
+			_txvState.setText("State: " + state.toString());
+		}
+		
+		return;
+	}
+	
+	private Status restoreGuardedItems() {
+		if (_app == null) {
+			_app = (ProjectSidekickApp) getApplication();
+		}
+		
+		/* Clear our guarded items list */
+		_guardedListAdapter.clear();
+		
+		/* Restore the list from our records */
+		List<KnownDevice> registeredDevices = _app.getRegisteredDevices();
+		for (KnownDevice device : registeredDevices) {
+			GuardedItem item = new GuardedItem(device.getName(), device.getAddress());
+			item.setIsLost(true);
+			_guardedListAdapter.add(item);
+		}
+		
+		/* Refresh the adapter */
+		_guardedListAdapter.notifyDataSetChanged();
+		
+		return Status.OK;
+	}
 
 	/* ********************* */
 	/* Private Inner Classes */
@@ -323,7 +393,7 @@ public class BeaconModeActivity extends ListActivity {
 	        	
 	        	for (int i = 0; i < _guardedListAdapter.getCount(); i++) {
 	        		GuardedItem item = _guardedListAdapter.getItem(i);
-	        		if (item.getAddress().equals(address)) {
+	        		if (item.addressMatches(address)) {
 	        			Logger.warn("Registered device already listed");
 	        			item.setIsLost(false);
 	    	        	_guardedListAdapter.notifyDataSetChanged();
@@ -339,7 +409,7 @@ public class BeaconModeActivity extends ListActivity {
 	        	
 	        	for (int i = 0; i < _guardedListAdapter.getCount(); i++) {
 	        		GuardedItem item = _guardedListAdapter.getItem(i);
-	        		if (item.getAddress().equals(address)) {
+	        		if (item.addressMatches(address)) {
 	        			_guardedListAdapter.remove(item);
 	        			break;
 	        		}
@@ -351,11 +421,12 @@ public class BeaconModeActivity extends ListActivity {
 	        	
 	        	for (int i = 0; i < _guardedListAdapter.getCount(); i++) {
 	        		GuardedItem item = _guardedListAdapter.getItem(i);
-	        		if (item.getAddress().equals(address)) {
+	        		if (item.addressMatches(address)) {
 	        			item.setIsLost(isLost);
 	        			break;
 	        		}
 	        	}
+	        	
 	        	_guardedListAdapter.notifyDataSetChanged();
 	        } else if (ProjectSidekickService.ACTION_UPDATE_FOUND.equals(action)) {
 	        	String address = intent.getStringExtra("ADDRESS");
@@ -363,7 +434,7 @@ public class BeaconModeActivity extends ListActivity {
 	        	
 	        	for (int i = 0; i < _guardedListAdapter.getCount(); i++) {
 	        		GuardedItem item = _guardedListAdapter.getItem(i);
-	        		if (item.getAddress().equals(address)) {
+	        		if (item.addressMatches(address)) {
 	        			item.setIsLost(isLost);
 	        			break;
 	        		}
