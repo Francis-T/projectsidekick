@@ -7,10 +7,16 @@ import net.sojourner.projectsidekick.types.Status;
 import net.sojourner.projectsidekick.utils.Logger;
 import android.app.AlertDialog;
 import android.app.ListActivity;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -19,7 +25,9 @@ import android.widget.Toast;
 
 public class AppModeBeaconMasterListActivity extends ListActivity implements BluetoothEventHandler {
 	private ProjectSidekickApp _app = (ProjectSidekickApp) getApplication();
-    private ArrayAdapter<String> _masterListAdapter = null; 
+    private ArrayAdapter<String> _masterListAdapter = null;
+	private Messenger 			_service 			= null;
+	private boolean 			_bIsBound 			= false;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -43,13 +51,25 @@ public class AppModeBeaconMasterListActivity extends ListActivity implements Blu
 						Logger.err("Master list adapter is unavailable");
 						return;
 					}
-					String address = _masterListAdapter.getItem(pos);
+					String listItem = _masterListAdapter.getItem(pos);
+					String itemDataPart[] = listItem.replace("\n", "|").split("\\|");
+					if (itemDataPart.length != 3) {
+						Logger.err("Cannot extract address from " + listItem.replace("\n", "|") + " [length: " + itemDataPart.length + "]");
+						return;
+					}
+					String address = itemDataPart[1];
 					showRemoveFromMasterListDialog(address);
 					
 					return;
 				}
 			}
 		);
+
+
+		if (!_bIsBound) {
+			Intent bindServiceIntent = new Intent(this, ProjectSidekickService.class);
+			bindService(bindServiceIntent, _serviceConnection, Context.BIND_AUTO_CREATE);
+		}
 
         return;
     }
@@ -67,7 +87,47 @@ public class AppModeBeaconMasterListActivity extends ListActivity implements Blu
         super.onResume();
         return;
     }
-	
+
+	@Override
+	protected void onDestroy() {
+		if (_bIsBound) {
+			unbindService(_serviceConnection);
+			_bIsBound = false;
+		}
+
+		super.onDestroy();
+		return;
+	}
+
+	private Status callService(int msgId) {
+		return callService(msgId, null, null);
+	}
+
+	private Status callService(int msgId, Bundle extras, Messenger localMessenger) {
+		if (_service == null) {
+			Logger.err("Service unavailable");
+			return Status.FAILED;
+		}
+
+		if (!_bIsBound) {
+			Logger.err("Service unavailable");
+			return Status.FAILED;
+		}
+
+		Message msg = Message.obtain(null, msgId, 0, 0);
+		msg.replyTo = localMessenger;
+		msg.setData(extras);
+
+		try {
+			_service.send(msg);
+		} catch (Exception e) {
+			Logger.err("Failed to call service: " + e.getMessage());
+			return Status.FAILED;
+		}
+
+		return Status.OK;
+	}
+
 	private void parseMasterList(String masterList[]) {
 		if (_masterListAdapter == null) {
 			Logger.err("Master list adapter is unavailable");
@@ -169,30 +229,45 @@ public class AppModeBeaconMasterListActivity extends ListActivity implements Blu
 		dlgBuilder.setMessage(deviceAddr + " will be removed from the beacon's master list. Is this OK?")
 			.setCancelable(false)
 			.setPositiveButton("Yes", new DialogInterface.OnClickListener() {
-						@Override
-						public void onClick(DialogInterface dialog, int which) {
-//							if (sendRequest("LEAVE " + deviceAddr) != Status.OK) {
-//								display("Failed to send request to beacon");
-//								return;
-//							}
-//							
-//							_masterListAdapter.remove(deviceAddr);
-//							
-//							display("Deleted!");
-							return;
-						}
-					})
+				@Override
+				public void onClick(DialogInterface dialog, int which) {
+					Bundle data = new Bundle();
+					data.putString("DEVICE_ADDR", deviceAddr);
+					callService(ProjectSidekickService.MSG_UNREG_DEVICE, data, null);
+					display("Delete requested!");
+					return;
+				}
+			})
 			.setNegativeButton("No", new DialogInterface.OnClickListener() {
-						@Override
-						public void onClick(DialogInterface dialog, int which) {
-							display("Cancelled!");
-							dialog.cancel();
-							return;
-						}
-					});
+				@Override
+				public void onClick(DialogInterface dialog, int which) {
+					display("Cancelled!");
+					dialog.cancel();
+					return;
+				}
+			});
 		
 		dlgBuilder.create().show();
 		
 		return;
 	}
+
+
+	private ServiceConnection _serviceConnection = new ServiceConnection() {
+		@Override
+		public void onServiceDisconnected(ComponentName className) {
+			_service = null;
+			_bIsBound = false;
+
+			return;
+		}
+
+		@Override
+		public void onServiceConnected(ComponentName className, IBinder binder) {
+			_service = new Messenger(binder);
+			_bIsBound = true;
+
+			return;
+		}
+	};
 }

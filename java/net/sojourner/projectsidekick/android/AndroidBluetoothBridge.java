@@ -79,8 +79,9 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 	public String getPlatform() {
 		return "android";
 	}
-	
-	public BTState getState() {
+
+	@Override
+	public synchronized BTState getState() {
 		return _state;
 	}
 	
@@ -120,7 +121,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		}
 		
 		/* Set the initial state to DISCONNECTED */
-		_state = BTState.DISCONNECTED;
+		setState(BTState.DISCONNECTED);
 		
 		return Status.OK;
 	}
@@ -162,7 +163,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			this.stop();
 		}
 		
-		_state = BTState.LISTENING;
+		setState(BTState.LISTENING);
 	
 		_bluetoothListener = new BluetoothListenerThread(true);
 		_bluetoothListener.start();
@@ -479,7 +480,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		
 		clearDeviceLists();
 		
-		_state = BTState.UNKNOWN;
+		setState(BTState.UNKNOWN);
 		
 		return Status.OK;
 	}
@@ -534,7 +535,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		bluetoothConn.start();
 		
 		_currentConnections.put(deviceAddr, bluetoothConn);
-		_state = BTState.CONNECTED;
+		setState(BTState.CONNECTED);
 		
 		Logger.info("Bluetooth connected!");
 		return Status.OK;
@@ -566,7 +567,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			_currentConnections.remove(conn.getDeviceAddress());
 		}
 		
-		_state = BTState.DISCONNECTED;
+		setState(BTState.DISCONNECTED);
 		
 		return Status.OK;
 	}
@@ -602,6 +603,12 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		_discoveredDevices = new HashMap<String, String>();
 		_currentConnections = new HashMap<String, BluetoothConnection>();
 		
+		return;
+	}
+
+	private synchronized void setState(BTState state) {
+		_state = state;
+		Logger.info("Bluetooth Bridge State is now " + _state.toString());
 		return;
 	}
 
@@ -816,7 +823,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 //			
 //			detachConnection();
 			
-			_state = BTState.DISCONNECTED;
+			setState(BTState.DISCONNECTED);
 			
 			Logger.info("Bluetooth Connection cancelled");
 			

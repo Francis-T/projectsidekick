@@ -19,6 +19,7 @@ import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Message;
@@ -43,6 +44,7 @@ public class BeaconModeActivity extends ListActivity {
 	
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
+		Logger.info("onCreate() called for " + this.getLocalClassName());
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_beacon_main);
 		
@@ -118,12 +120,6 @@ public class BeaconModeActivity extends ListActivity {
 							display("Failed to start SETUP Mode.");
 							return;
 						}
-						
-						ImageButton btn = (ImageButton) v;
-						btn.setColorFilter(Color.GREEN);
-
-						setState(BeaconState.SETUP);
-						display("SETUP Mode Started.");
 					} else if (getState() == BeaconState.SETUP) {
 
 						status = callService(ProjectSidekickService.MSG_STOP);
@@ -131,12 +127,6 @@ public class BeaconModeActivity extends ListActivity {
 							display("Failed to Stop.");
 							return;
 						}
-						
-						ImageButton btn = (ImageButton) v;
-						btn.setColorFilter(Color.RED);
-
-						setState(BeaconState.INACTIVE);
-						display("Stopped.");
 					}
 					
 					return;
@@ -161,6 +151,7 @@ public class BeaconModeActivity extends ListActivity {
 
 	@Override
 	protected void onStart() {
+		Logger.info("onStart() called for " + this.getLocalClassName());
 		super.onStart();
 		
 		if (_receiver != null) {
@@ -169,6 +160,8 @@ public class BeaconModeActivity extends ListActivity {
 			filter.addAction(ProjectSidekickService.ACTION_UNREGISTERED);
 			filter.addAction(ProjectSidekickService.ACTION_UPDATE_LOST);
 			filter.addAction(ProjectSidekickService.ACTION_UPDATE_FOUND);
+			filter.addAction(ProjectSidekickService.ACTION_REG_STARTED);
+			filter.addAction(ProjectSidekickService.ACTION_REG_FINISHED);
 			registerReceiver(_receiver, filter);
 		}
 		
@@ -177,6 +170,7 @@ public class BeaconModeActivity extends ListActivity {
 
 	@Override
 	protected void onResume() {
+		Logger.info("onResume() called for " + this.getLocalClassName());
 		if (_app == null) {
 			_app = (ProjectSidekickApp) getApplication();
 		}
@@ -186,13 +180,14 @@ public class BeaconModeActivity extends ListActivity {
 
 	@Override
 	protected void onPause() {
-		
+		Logger.info("onPause() called for " + this.getLocalClassName());
 		super.onPause();
 		return;
 	}
 	
 	@Override
 	protected void onStop() {
+		Logger.info("onStop() called for " + this.getLocalClassName());
 		if (_receiver != null) {
 			unregisterReceiver(_receiver);
 		}
@@ -203,6 +198,7 @@ public class BeaconModeActivity extends ListActivity {
 
 	@Override
 	protected void onDestroy() {
+		Logger.info("onDestroy() called for " + this.getLocalClassName());
 		if (_bIsBound) {
 			unbindService(_serviceConnection);
 			_bIsBound = false;
@@ -290,21 +286,26 @@ public class BeaconModeActivity extends ListActivity {
     }
 
     public void restoreMasterList() {
+		if (android.os.Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB) {
+			Logger.err("Master List Restore Not supported");
+			return;
+		}
+
 		SharedPreferences prefs = getSharedPreferences("PROJECT_BEACON__1127182", MODE_WORLD_WRITEABLE);
-		
+
 		Set<String> rgdSet = prefs.getStringSet("MASTER_DVC_LIST", null);
 		if (rgdSet != null) {
 			for (String item : rgdSet) {
 				String deviceInfo[] = item.split(",");
 				if (deviceInfo.length != 2) {
-					Logger.err("Skipping malformed registered device string: " 
+					Logger.err("Skipping malformed registered device string: "
 								+ item);
 					continue;
 				}
-				
+
 				KnownDevice kd = new KnownDevice(deviceInfo[0], deviceInfo[1]);
 				kd.setRegistered(true);
-				
+
 				addRegisteredDevice(kd);
 			}
 		}
@@ -360,6 +361,22 @@ public class BeaconModeActivity extends ListActivity {
 		_guardedListAdapter.notifyDataSetChanged();
 		
 		return Status.OK;
+	}
+
+	private void updateGuiToRegistrationStarted() {
+		ImageButton btn = (ImageButton) findViewById(R.id.btn_mode);
+		btn.setColorFilter(Color.GREEN);
+		setState(BeaconState.SETUP);
+		display("SETUP Mode Started.");
+		return;
+	}
+
+	private void updateGuiToRegistrationFinished() {
+		ImageButton btn = (ImageButton) findViewById(R.id.btn_mode);
+		btn.setColorFilter(Color.RED);
+		setState(BeaconState.INACTIVE);
+		display("Stopped.");
+		return;
 	}
 
 	/* ********************* */
@@ -430,17 +447,23 @@ public class BeaconModeActivity extends ListActivity {
 	        	_guardedListAdapter.notifyDataSetChanged();
 	        } else if (ProjectSidekickService.ACTION_UPDATE_FOUND.equals(action)) {
 	        	String address = intent.getStringExtra("ADDRESS");
+				short rssi = intent.getShortExtra("RSSI", (short) 0);
 	        	boolean isLost = intent.getBooleanExtra("LOST_STATUS", false);
 	        	
 	        	for (int i = 0; i < _guardedListAdapter.getCount(); i++) {
 	        		GuardedItem item = _guardedListAdapter.getItem(i);
 	        		if (item.addressMatches(address)) {
 	        			item.setIsLost(isLost);
+						item.setRssi(rssi);
 	        			break;
 	        		}
 	        	}
 	        	_guardedListAdapter.notifyDataSetChanged();
-	        }
+	        } else if (ProjectSidekickService.ACTION_REG_STARTED.equals(action)) {
+				updateGuiToRegistrationStarted();
+			} else if (ProjectSidekickService.ACTION_REG_FINISHED.equals(action)) {
+				updateGuiToRegistrationFinished();
+			}
 	        
 	        return;
 	    }

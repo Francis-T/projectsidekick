@@ -10,6 +10,7 @@ import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
 import net.sojourner.projectsidekick.types.BTState;
 import net.sojourner.projectsidekick.types.GuardedItem;
 import net.sojourner.projectsidekick.types.KnownDevice;
+import net.sojourner.projectsidekick.types.ServiceState;
 import net.sojourner.projectsidekick.types.Status;
 import net.sojourner.projectsidekick.utils.Logger;
 import android.app.Service;
@@ -28,6 +29,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.Messenger;
+import android.os.RemoteException;
 import android.widget.Toast;
 
 public class ProjectSidekickService extends Service implements
@@ -44,6 +46,9 @@ public class ProjectSidekickService extends Service implements
 	public static final int MSG_DISCONNECT 		= 10;
 	public static final int MSG_CONNECT 		= 11;
 	public static final int MSG_SEND_GET_LIST 	= 12;
+	public static final int MSG_QUERY_STATE 	= 13;
+	public static final int MSG_QUERY_BT_STATE 	= 14;
+	public static final int MSG_UNREG_DEVICE 	= 15;
 	
 	public static final String ACTION_CONNECTED 	= "net.sojourner.projectsidekick.action.CONNECTED";
 	public static final String ACTION_DATA_RECEIVE	= "net.sojourner.projectsidekick.action.DATA_RECEIVED";
@@ -53,14 +58,13 @@ public class ProjectSidekickService extends Service implements
 	public static final String ACTION_UPDATE_FOUND 	= "net.sojourner.projectsidekick.action.UPDATE_FOUND";
 	public static final String ACTION_DISCONNECTED 	= "net.sojourner.projectsidekick.action.DISCONNECTED";
 	public static final String ACTION_LIST_RECEIVED = "net.sojourner.projectsidekick.action.LIST_RECEIVED";
+	public static final String ACTION_REG_STARTED	= "net.sojourner.projectsidekick.action.REG_STARTED";
+	public static final String ACTION_REG_FINISHED	= "net.sojourner.projectsidekick.action.REG_FINISHED";
+
 	private static final long DEFAULT_SLEEP_TIME 		= 15000;
 	private static final long DEFAULT_AWAIT_CONN_TIME	= 60000;
 	private static final long MAX_AWAIT_CONN_TIME 		= 60000;
 	private static final long DEFAULT_RW_INTERVAL 		= 10000;
-
-	public static enum ServiceState {
-		UNKNOWN, SETUP, GUARD, REGISTERING, REPORT
-	};
 
 	private static enum Role {
 		UNKNOWN, SIDEKICK, MOBILE
@@ -168,6 +172,9 @@ public class ProjectSidekickService extends Service implements
 
 	@Override
 	public void onDisconnected(String name, String address) {
+		if (_cyclicRegisterTask != null) {
+			_cyclicRegisterTask.interrupt();
+		}
 		/* Broadcast our received data for our receivers */
 		/*
 		 * TODO We may have to limit this at some point for security purposes
@@ -299,8 +306,8 @@ public class ProjectSidekickService extends Service implements
 	}
 
 	private Status disconnect() {
-		/* Set state to SETUP */
-		setState(ServiceState.SETUP);
+		/* Set state to UNKNOWN */
+		setState(ServiceState.UNKNOWN);
 
 		_app = getAppRef();
 		_bluetoothBridge = _app.getBluetoothBridge();
@@ -323,12 +330,18 @@ public class ProjectSidekickService extends Service implements
 			_cyclicGuardTask = null;
 		}
 
+		/* Cancel ongoing register tasks */
+		if (_cyclicRegisterTask != null) {
+			_cyclicRegisterTask.cancel(true);
+			_cyclicRegisterTask = null;
+		}
+
 		return Status.OK;
 	}
 
 	private Status stop() {
-		/* Set state to SETUP */
-		setState(ServiceState.SETUP);
+		/* Set state to UNKNOWN */
+		setState(ServiceState.UNKNOWN);
 
 		_app = getAppRef();
 		_bluetoothBridge = _app.getBluetoothBridge();
@@ -477,6 +490,51 @@ public class ProjectSidekickService extends Service implements
 			return Status.FAILED;
 		}
 
+		return Status.OK;
+	}
+
+	private Status sendUnregisterRequest(String address) {
+		_app = getAppRef();
+		_bluetoothBridge = _app.getBluetoothBridge();
+
+		Status status = null;
+		String msg = "DELETE " + address;
+		status = _bluetoothBridge.broadcast(msg.getBytes());
+		if (status != Status.OK) {
+			Logger.err("Failed to broadcast DELETE command to " + address);
+			return Status.FAILED;
+		}
+
+		return Status.OK;
+	}
+
+	private Status replyBluetoothState(Messenger replyTo) {
+		Bundle data = new Bundle();
+		data.putString("STATE", _bluetoothBridge.getState().toString());
+
+		Message msg = Message.obtain(null, AppModeConfigBeaconActivity.MSG_RESP_BLUETOOTH_STATE, 0, 0);
+		msg.setData(data);
+
+		try {
+			replyTo.send(msg);
+		} catch (Exception e) {
+			Logger.err("Exception occurred: " + e.getMessage());
+		}
+		return Status.OK;
+	}
+
+	private Status replyServiceState(Messenger replyTo) {
+		Bundle data = new Bundle();
+		data.putString("STATE", getState().toString());
+
+		Message msg = Message.obtain(null, AppModeConfigBeaconActivity.MSG_RESP_SERVICE_STATE, 0, 0);
+		msg.setData(data);
+
+		try {
+			replyTo.send(msg);
+		} catch (Exception e) {
+			Logger.err("Exception occurred: " + e.getMessage());
+		}
 		return Status.OK;
 	}
 	
@@ -717,6 +775,7 @@ public class ProjectSidekickService extends Service implements
 	private void display(String msg) {
 		Toast.makeText(ProjectSidekickService.this, msg, Toast.LENGTH_SHORT)
 				.show();
+		Logger.info(msg);
 		return;
 	}
 
@@ -787,6 +846,7 @@ public class ProjectSidekickService extends Service implements
 				if (connData == null) {
 					break;
 				}
+
 				String connAddr = connData.getString("DEVICE_ADDR", "");
 
 				status = connectToDevice(connAddr);
@@ -801,15 +861,15 @@ public class ProjectSidekickService extends Service implements
 				status = sendRegisterRequest(regAddr);
 				break;
 			case MSG_SEND_GET_LIST:
-				Bundle listFromdata = msg.getData();
-				if (listFromdata == null) {
+				Bundle listFromData = msg.getData();
+				if (listFromData == null) {
 					break;
 				}
-				String listFromAddr = listFromdata.getString("DEVICE_ADDR", "");
+				String listFromAddr = listFromData.getString("DEVICE_ADDR", "");
 				
 				status = sendGetListRequest(listFromAddr);
 				break;
-			case MSG_SET_AS_SIDEKICK:
+				case MSG_SET_AS_SIDEKICK:
 				status = setRole(Role.SIDEKICK);
 				break;
 			case MSG_SET_AS_MOBILE:
@@ -817,6 +877,20 @@ public class ProjectSidekickService extends Service implements
 				break;
 			case MSG_DISCONNECT:
 				status = disconnect();
+				break;
+			case MSG_QUERY_STATE:
+				status = replyServiceState(msg.replyTo);
+				break;
+			case MSG_QUERY_BT_STATE:
+				status = replyBluetoothState(msg.replyTo);
+				break;
+			case MSG_UNREG_DEVICE:
+				Bundle unregAddrData = msg.getData();
+				if (unregAddrData == null) {
+					break;
+				}
+				String unregAddr = unregAddrData.getString("DEVICE_ADDR", "");
+				status = sendUnregisterRequest(unregAddr);
 				break;
 			default:
 				super.handleMessage(msg);
@@ -832,17 +906,25 @@ public class ProjectSidekickService extends Service implements
 	}
 
 	private class RegisterCyclicTask extends AsyncTask<Void, String, Void> {
+		private Thread 			_runThread = null;
+		private ReentrantLock 	_runThreadLock = new ReentrantLock();
 
 		@Override
 		protected Void doInBackground(Void... params) {
+			_runThreadLock.lock();
+			_runThread = Thread.currentThread();
+			_runThreadLock.unlock();
+
 			BTState btState = BTState.UNKNOWN;
 
+			/* Tell all receivers that registration has started */
+			broadcastAction(ACTION_REG_STARTED);
 			publishProgress("Device Registration has started");
+
 			setState(ServiceState.SETUP);
 			long lStartTime = System.currentTimeMillis();
 
 			while (getState() == ServiceState.SETUP) {
-
 				/*
 				 * Start listening for connections only if we're not already
 				 * listening, connecting, or connected
@@ -859,8 +941,13 @@ public class ProjectSidekickService extends Service implements
 				try {
 					Thread.sleep(DEFAULT_AWAIT_CONN_TIME);
 				} catch (InterruptedException e) {
-					/* Normal interruptions are ok */
-					break;
+					Logger.err("Interrupted");
+					/* Handle interrupts due to termination */
+					if (getState() != ServiceState.SETUP) {
+						break;
+					}
+
+					/* Normal interruptions should proceed as usual */
 				} catch (Exception e) {
 					Logger.err("Exception occurred: " + e.getMessage());
 					_cyclicRegisterTask = null;
@@ -874,10 +961,32 @@ public class ProjectSidekickService extends Service implements
 				}
 			}
 
+			_runThreadLock.lock();
+			_runThread = null;
+			_runThreadLock.unlock();
+
 			_cyclicRegisterTask = null;
+
+			/* Tell all receivers that registration has ended */
+			broadcastAction(ACTION_REG_FINISHED);
 			publishProgress("Device Registration has ended");
 
 			return null;
+		}
+
+		public void interrupt() {
+			_runThreadLock.lock();
+			if (_runThread != null) {
+				_runThread.interrupt();
+			}
+			_runThreadLock.unlock();
+			return;
+		}
+
+		private void broadcastAction(String action) {
+			Intent intent = new Intent(action);
+			sendBroadcast(intent);
+			return;
 		}
 
 		@Override
@@ -897,6 +1006,7 @@ public class ProjectSidekickService extends Service implements
 		@Override
 		protected Void doInBackground(Void... params) {
 			publishProgress("Guard Task Started.");
+
 			setState(ServiceState.GUARD);
 
 			/* Periodically check guarded items */
@@ -1154,6 +1264,11 @@ public class ProjectSidekickService extends Service implements
 					if (item.addressMatches(address)) {
 						item.setRegistered(false);
 						targetItem = item;
+
+						/* Notify any interested activities */
+						Intent intent = new Intent(ACTION_UNREGISTERED);
+						intent.putExtra("ADDRESS", address);
+						sendBroadcast(intent);
 						break;
 					}
 				}
@@ -1279,12 +1394,14 @@ public class ProjectSidekickService extends Service implements
 			if (BluetoothDevice.ACTION_FOUND.equals(action)) {
 				BluetoothDevice device = intent
 						.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+				short uRssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, (short)0);
 				String address = device.getAddress();
 				String name = device.getName();
 
 				for (GuardedItem item : _foundDevices) {
 					if (item.addressMatches(address)) {
 						item.setIsLost(false);
+						item.setRssi(uRssi);
 
 						Logger.info("Updated found device: " + item.toString());
 
@@ -1293,12 +1410,14 @@ public class ProjectSidekickService extends Service implements
 						foundIntent.putExtra("NAME", item.getName());
 						foundIntent.putExtra("ADDRESS", item.getAddress());
 						foundIntent.putExtra("LOST_STATUS", false);
+						foundIntent.putExtra("RSSI", item.getRssi());
 						sendBroadcast(foundIntent);
 						return;
 					}
 				}
 				GuardedItem newItem = new GuardedItem(name, address);
 				newItem.setIsLost(false);
+				newItem.setRssi(uRssi);
 				_foundDevices.add(newItem);
 
 				Logger.info("Added found device: " + newItem.toString());
@@ -1308,6 +1427,7 @@ public class ProjectSidekickService extends Service implements
 				foundIntent.putExtra("NAME", newItem.getName());
 				foundIntent.putExtra("ADDRESS", newItem.getAddress());
 				foundIntent.putExtra("LOST_STATUS", false);
+				foundIntent.putExtra("RSSI", newItem.getRssi());
 				sendBroadcast(foundIntent);
 
 				return;

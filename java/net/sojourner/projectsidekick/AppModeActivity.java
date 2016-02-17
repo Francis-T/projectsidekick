@@ -61,7 +61,7 @@ public class AppModeActivity extends ListActivity {
 							= (ArrayAdapter<KnownDevice>) 
 								AppModeActivity.this.getListAdapter();
 					}
-					
+
 					KnownDevice kd = (KnownDevice) _deviceListAdapter.getItem(pos);
 					// TODO Not checked if null
 					

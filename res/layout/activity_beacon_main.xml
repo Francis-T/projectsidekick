@@ -24,14 +24,6 @@
 	        android:layout_weight="1"
 	        android:src="@android:drawable/ic_lock_power_off"
 	        android:contentDescription="Set Mode" />
-        
-        <ImageButton
-            android:id="@+id/btn_beacon_discover"
-            android:layout_width="0dip"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:src="@android:drawable/ic_menu_mapmode"
-            android:contentDescription="Start Discovery" />
     </LinearLayout>
     
     <TextView

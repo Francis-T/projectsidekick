@@ -13,12 +13,13 @@ import net.sojourner.projectsidekick.types.Status;
 import net.sojourner.projectsidekick.utils.Logger;
 import android.app.Application;
 import android.content.SharedPreferences;
+import android.os.Build;
 
 public class ProjectSidekickApp extends Application {
 	private static IBluetoothBridge _bluetoothBridge = AndroidBluetoothBridge.getInstance();
 	public static enum Mode { UNSET, APP, BEACON };
-	public static final int REQUEST_BLUETOOTH_DISCOVERABLE = 0xB0;
-	public static final int REQUEST_CODE_BLUETOOTH_ENABLE = 0xB1;
+	public static final int REQUEST_BLUETOOTH_DISCOVERABLE 	= 0xB0;
+	public static final int REQUEST_CODE_BLUETOOTH_ENABLE 	= 0xB1;
 	
     private List<KnownDevice> _registeredDevices = new ArrayList<KnownDevice>();
 	private Mode _mode = Mode.UNSET;
@@ -106,8 +107,13 @@ public class ProjectSidekickApp extends Application {
     }
     
     public void restoreRegisteredDevices() {
+		if (android.os.Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB) {
+			Logger.err("Master List Restore Not supported");
+			return;
+		}
+
 		SharedPreferences prefs = getSharedPreferences("PROJECT_BEACON__1127182", MODE_WORLD_WRITEABLE);
-		
+
 		Set<String> rgdSet = prefs.getStringSet("REGISTERED_DVC_LIST", null);
 		if (rgdSet != null) {
 			for (String item : rgdSet) {
@@ -127,6 +133,11 @@ public class ProjectSidekickApp extends Application {
     }
 
     public void saveRegisteredDevices() {
+		if (android.os.Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB) {
+			Logger.err("Master List Restore Not supported");
+			return;
+		}
+
 		SharedPreferences prefs = getSharedPreferences("PROJECT_BEACON__1127182", MODE_WORLD_WRITEABLE);
 
 		Set<String> rgdInfoSet = new HashSet<String>();
