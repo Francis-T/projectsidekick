@@ -8,5 +8,8 @@
     <string name="title_app_mode_beacon_master_list">Beacon Guard List</string>
     <string name="title_beacon_mode">Beacon Mode</string>
     <string name="hello_world">Hello world!</string>
+    <string name="m_txt_set_check_mode">Set Device Check Mode</string>
+    <string name="m_txt_set_check_interval">Set Device Check Interval</string>
+    <string name="m_txt_set_alarm_toggle">Enable/Disable Sound Alarm</string>
 
 </resources>

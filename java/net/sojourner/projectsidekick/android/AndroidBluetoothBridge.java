@@ -14,7 +14,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import net.sojourner.projectsidekick.interfaces.BluetoothEventHandler;
 import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
 import net.sojourner.projectsidekick.types.BTState;
-import net.sojourner.projectsidekick.types.Status;
+import net.sojourner.projectsidekick.types.PSStatus;
 import net.sojourner.projectsidekick.utils.Logger;
 
 import android.annotation.SuppressLint;
@@ -86,44 +86,35 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 	}
 	
 	@Override
-	public Status initialize(Object initObject, boolean isServer) {
+	public PSStatus initialize(Object initObject, boolean isServer) {
 		/* Allow connect only if we're coming from the unknown state */
 		if (_state != BTState.UNKNOWN) {
 			Logger.warn("Already initialized()");
-			return Status.OK;
+			return PSStatus.OK;
 		}
 		
 		if (initObject == null) {
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		/* Treat the initObject as the _context */
 		_context = (Context) initObject;
-		
-//		_bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-//		
-//		if ( _bluetoothAdapter == null ) {
-//			Logger.err("Could not obtain a Bluetooth adapter");
-//			return Status.FAILED;
-//		}
 		if ( _bluetoothAdapter.isEnabled() == false ) {
 			Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
 			_context.startActivity(enableBtIntent);
 //			(enableBtIntent, BLUETOOTH_ENABLE_REQUEST); //TODO consider removing?
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		setupDeviceLists();
 		
 		/* Remember initialization settings (either server or client) */
-		if (isServer) {
-			_isServer = isServer;
-		}
+		_isServer = isServer;
 		
 		/* Set the initial state to DISCONNECTED */
 		setState(BTState.DISCONNECTED);
 		
-		return Status.OK;
+		return PSStatus.OK;
 	}
 
 	@Override
@@ -141,17 +132,17 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 	}
 
 	@Override
-	public Status listen() {
+	public PSStatus listen() {
 		/* Allow listen only if started as a Bluetooth server */
 		if (!_isServer) {
 			Logger.err("Not initialized as a Bluetooth Server");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		/* Allow listen only if we're coming from the disconnected state */
 		if (_state != BTState.DISCONNECTED) {
 			Logger.err("Invalid state for listen()");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		/* Prevent other threads from manipulating the listen thread 
@@ -182,26 +173,26 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		
 		this.getPairedDeviceNames();
 		
-		return Status.OK;
+		return PSStatus.OK;
 	}
 	
 	@Override
-	public Status connectDeviceByAddress(String address) {
+	public PSStatus connectDeviceByAddress(String address) {
 		/* Allow listen only if started as a Bluetooth client */
 		if (_isServer) {
 			Logger.err("Not initialized as a Bluetooth client");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		/* Allow connect only if we're coming from the disconnected state */
 		if (_state != BTState.DISCONNECTED) {
 			Logger.err("Invalid state for connectDeviceByAddress()");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		if ( BluetoothAdapter.checkBluetoothAddress(address) == false ) {
 			Logger.err("Invalid bluetooth hardware address: " + address);
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		BluetoothDevice device = _bluetoothAdapter.getRemoteDevice(address);
@@ -209,12 +200,12 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		
 		if (device == null) {
 			Logger.err("Invalid Bluetooth device address");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		if (_currentConnections.containsKey(address) == true) {
 			Logger.err("Already connected");
-			return Status.OK;
+			return PSStatus.OK;
 		}
 		
 		/* Prevent other threads from manipulating the conn thread 
@@ -228,7 +219,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		BluetoothConnectThread connThread = this.getNewConnectThread(address, isSecure);
 		if (connThread == null) {
 			Logger.err("Failed to obtain a connect thread");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		_bluetoothConnectThread = connThread;
@@ -250,40 +241,40 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			if (_bluetoothConnectThread != null) {
 				_bluetoothConnectThread.cancel();
 			}
-			Logger.err("Connection unsuccessful");
-			return Status.FAILED;
+			Logger.err("Connection unsuccessful: Exiting at state " + this.getState());
+			return PSStatus.FAILED;
 		}
 		
-		return Status.OK;
+		return PSStatus.OK;
 	}
 
 	@Override
-	public Status connectDeviceByName(String name) {
+	public PSStatus connectDeviceByName(String name) {
 		/* Allow listen only if started as a Bluetooth client */
 		if (_isServer) {
 			Logger.err("Not initialized as a Bluetooth client");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		/* Allow connect only if we're coming from the disconnected state */
 		if (_state != BTState.DISCONNECTED) {
 			Logger.err("Invalid state for connectDeviceByName()");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		if (_pairedDevices == null) {
 			Logger.err("Paired devices list unavailable");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		if (_discoveredDevices == null) {
 			Logger.err("Discovered devices list unavailable");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		if (_currentConnections == null) {
 			Logger.err("Current connection list unavailable");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		String address = "";
@@ -295,7 +286,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		
 		if (address.length() > 0 && _currentConnections.containsKey(address)) {
 			Logger.info("Already connected");
-			return Status.OK;
+			return PSStatus.OK;
 		}
 		
 		Logger.info("Found device address: " + address);
@@ -304,56 +295,58 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 	}
 
 	@Override
-	public Status disconnectDeviceByAddress(String address) {
+	public PSStatus disconnectDeviceByAddress(String address) {
 		if (!_currentConnections.containsKey(address)) {
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		BluetoothConnection conn = _currentConnections.get(address);
 		conn.cancel();
+
+		_currentConnections.remove(conn);
 		
-		return Status.OK;
+		return PSStatus.OK;
 	}
 
 	@Override
-	public Status broadcast(byte[] data) {
+	public PSStatus broadcast(byte[] data) {
 		/* Allow broadcast only if we're in the connected state */
 		if (_state != BTState.CONNECTED) {
 			Logger.err("Invalid state for broadcast()");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		if (_currentConnections == null) {
 			Logger.err("Current connections list unavailable");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		if (_currentConnections.isEmpty()) {
 			Logger.err("Current connections list is empty");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		for (Map.Entry<String, BluetoothConnection> conn : _currentConnections.entrySet()) {
 			conn.getValue().write(data);
 		}
 		
-		return Status.OK;
+		return PSStatus.OK;
 	}
 
 	@Override
-	public Status destroy() {
-		if (stop() != Status.OK)
+	public PSStatus destroy() {
+		if (stop() != PSStatus.OK)
 		{
 			Logger.err("Failed to destroy BluetoothBridge");
 		}
 		
-		return Status.OK;
+		return PSStatus.OK;
 	}
 
 	@Override
-	public Status setEventHandler(BluetoothEventHandler eventHandler) {
+	public PSStatus setEventHandler(BluetoothEventHandler eventHandler) {
 		this._eventHandler = eventHandler;
-		return Status.OK;
+		return PSStatus.OK;
 	}
 
 	
@@ -422,7 +415,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 	/*********************/
 	/** Private Methods **/
 	/*********************/
-	private Status stop() {
+	private PSStatus stop() {
 		if (_broadcastReceiver != null) {
 			_context.unregisterReceiver(_broadcastReceiver);
 			_broadcastReceiver = null;
@@ -482,7 +475,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		
 		setState(BTState.UNKNOWN);
 		
-		return Status.OK;
+		return PSStatus.OK;
 	}
 	
 	private BluetoothConnectThread getNewConnectThread(String deviceAddr, boolean useSecureRfComm) {
@@ -506,7 +499,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		return new BluetoothConnectThread(device, useSecureRfComm);
 	}
 	
-	private synchronized Status connectDevice(BluetoothSocket socket) {
+	private synchronized PSStatus connectDevice(BluetoothSocket socket) {
 		BluetoothDevice device = socket.getRemoteDevice();
 		String deviceAddr = device.getAddress();
 		
@@ -525,7 +518,6 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			_bluetoothConnectThread = null;
 		}
 		
-		/* Cancel the existing listener thread (server only case) */
 		if (_bluetoothListener != null) {
 			_bluetoothListener.cancel();
 			_bluetoothListener = null;
@@ -538,22 +530,22 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		setState(BTState.CONNECTED);
 		
 		Logger.info("Bluetooth connected!");
-		return Status.OK;
+		return PSStatus.OK;
 	}
 	
-	private Status removeConnection(BluetoothConnection conn){
+	private PSStatus removeConnection(BluetoothConnection conn){
 		if (conn == null) {
 			Logger.err("Invalid input parameter/s" +
 					" in AndroidBluetoothBridge.removeConnection()");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		if (_currentConnections == null) {
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		if (_currentConnections.isEmpty()) {
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		
 		if (_currentConnections.containsKey(conn.getDeviceAddress())) {
@@ -569,7 +561,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		
 		setState(BTState.DISCONNECTED);
 		
-		return Status.OK;
+		return PSStatus.OK;
 	}
 	
 	private void clearDeviceLists() {
@@ -675,6 +667,8 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 				return;
 			}
 
+			Logger.info("Using socket: " + socket.toString());
+
 			_socket = socket;
 			_remoteName = _socket.getRemoteDevice().getName();
 			_remoteAddress = _socket.getRemoteDevice().getAddress();
@@ -758,6 +752,9 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 						Thread.sleep(1000);
 					} catch (InterruptedException e) {
 						Logger.info("BluetoothConnection thread interrupted");
+						if (_state != BTState.CONNECTED) {
+							break;
+						}
 					}
 				}
 				
@@ -776,14 +773,9 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			} else {
 				Logger.warn("No event handlers to notify!");
 			}
-			
-			if (_socket != null) {
-				try {
-					_socket.close();
-				} catch (IOException e) {
-					Logger.err("Failed to close BluetoothConnection socket");
-				}
-			}
+
+			/* Close all streams and sockets */
+			closeStreams();
 			
 			return;
 		}
@@ -803,6 +795,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 				_outputStream.write(buffer);
 			} catch (IOException e) {
 				Logger.err("Encountered an IOEXCEPTION upon writing to stream: " + e.getMessage());
+				setState(BTState.DISCONNECTED);
 			}
 			
 			return;
@@ -827,6 +820,36 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 			
 			Logger.info("Bluetooth Connection cancelled");
 			
+			return;
+		}
+
+		private void closeStreams() {
+			if (_outputStream != null) {
+				Logger.info("Disconnecting Output Stream...");
+				try {
+					_outputStream.close();
+				} catch (IOException e) {
+					Logger.err("Failed to close Output Stream");
+				}
+			}
+
+			if (_inputStream != null) {
+				Logger.info("Disconnecting Input Stream...");
+				try {
+					_inputStream.close();
+				} catch (IOException e) {
+					Logger.err("Failed to close Input Stream");
+				}
+			}
+
+			if (_socket != null) {
+				Logger.info("Disconnecting Bluetooth Socket...");
+				try {
+					_socket.close();
+				} catch (IOException e) {
+					Logger.err("Failed to close BluetoothConnection socket");
+				}
+			}
 			return;
 		}
 		

@@ -3,7 +3,8 @@ package net.sojourner.projectsidekick.types;
 import net.sojourner.projectsidekick.utils.Logger;
 
 public class KnownDevice {
-	public static enum DeviceStatus { UNKNOWN, NOT_FOUND, FOUND }; 
+
+	public static enum DeviceStatus { UNKNOWN, NOT_FOUND, FOUND };
 	
 	private String 		 _name 	 			= "";
 	private String 		 _addr 	 			= "";

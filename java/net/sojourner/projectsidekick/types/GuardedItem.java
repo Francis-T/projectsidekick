@@ -43,7 +43,11 @@ public class GuardedItem extends KnownDevice {
 	
 	public String toString() {
 		String presence = _isLost ? "LOST" : "PRESENT";
-		return getName() + " / " + getAddress() + " - " + presence + " " +
+		String exclude = isRegistered() ? "" : "(EXCLUDED)\n";
+		return exclude +
+				getName() + " / " +
+				getAddress() + "\n" +
+				presence + " " +
 				"(" + _uRssi + ")";
 	}
 }

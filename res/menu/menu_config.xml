@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/m_item_set_check_mode"
+        android:title="@string/m_txt_set_check_mode"/>
+    <item android:id="@+id/m_item_set_check_interval"
+        android:title="@string/m_txt_set_check_interval" />
+    <item android:id="@+id/m_item_set_alarm_toggle"
+        android:title="@string/m_txt_set_alarm_toggle" />
+</menu>

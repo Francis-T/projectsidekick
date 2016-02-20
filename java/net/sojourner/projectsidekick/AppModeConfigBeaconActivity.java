@@ -2,41 +2,33 @@ package net.sojourner.projectsidekick;
 
 import net.sojourner.projectsidekick.types.BTState;
 import net.sojourner.projectsidekick.types.KnownDevice;
+import net.sojourner.projectsidekick.types.ServiceBindingActivity;
 import net.sojourner.projectsidekick.types.ServiceState;
-import net.sojourner.projectsidekick.types.Status;
+import net.sojourner.projectsidekick.types.PSStatus;
 import net.sojourner.projectsidekick.utils.Logger;
-import android.app.Activity;
 import android.app.AlertDialog;
-import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.IBinder;
 import android.os.Message;
-import android.os.Messenger;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-public class AppModeConfigBeaconActivity extends Activity {
+public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 	public static final int MSG_RESP_SERVICE_STATE		= 1;
 	public static final int MSG_RESP_BLUETOOTH_STATE	= 2;
-	private final Messenger _messenger 				= new Messenger(new MessageHandler());
 
 	private ProjectSidekickApp 	_app 				= (ProjectSidekickApp) getApplication();
-	private Messenger 			_service 			= null;
     private String 				_deviceName 		= "";
     private String 				_deviceAddr 		= "";
     private boolean 			_isConnected 		= false;
-	private boolean 			_bIsBound 			= false;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -44,13 +36,12 @@ public class AppModeConfigBeaconActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_app_config_beacon);
 
+		/* Extract device info from the intent */
         Intent initializer = getIntent();
-        if (initializer == null) {
-        	return;
-        }
-
         Bundle b = initializer.getBundleExtra("DEVICE_INFO");
         if (b == null) {
+			Logger.err("Failed to get device info from Intent");
+			finish();
         	return;
         }
 
@@ -62,31 +53,33 @@ public class AppModeConfigBeaconActivity extends Activity {
         _deviceName = b.getString("DEVICE_NAME");
         if (_deviceName == null) {
         	Logger.err("Device name is null");
+			finish();
         	return;
         }
 
         _deviceAddr = b.getString("DEVICE_ADDRESS");
         if (_deviceAddr == null) {
         	Logger.err("Device address is null");
+			finish();
         	return;
         }
 
-        reloadDeviceInfo();
+		/* Setup our GUI */
+		guiReloadDeviceInfo();
 
-        final Button btnConnect =
-            (Button) findViewById(R.id.btn_connect);
+        final Button btnConnect = (Button) findViewById(R.id.btn_connect);
         btnConnect.setOnClickListener(
             new View.OnClickListener() {
 				@Override
 				public void onClick(View v) {
 					if (_isConnected) {
 						disconnectDevice();
-						updateGuiToDisconnected();
+						//updateGuiToDisconnected();
 						_isConnected = false;
 						return;
 					}
 
-					if (connectToDevice() != Status.OK) {
+					if (connectToDevice() != PSStatus.OK) {
                         display("Connection Failed!");
                     }
                     return;
@@ -94,13 +87,7 @@ public class AppModeConfigBeaconActivity extends Activity {
             }
         );
 
-        final Button btnRename  =
-            (Button) findViewById(R.id.btn_rename);
-        if (_app.findRegisteredDevice(_deviceAddr) != null) {
-        	btnRename.setEnabled(true);
-        } else {
-        	btnRename.setEnabled(false);
-        }
+        final Button btnRename = (Button) findViewById(R.id.btn_rename);
         btnRename.setOnClickListener(
             new View.OnClickListener() {
 				@Override
@@ -115,14 +102,18 @@ public class AppModeConfigBeaconActivity extends Activity {
 				}
             }
         );
+		if (_app.findRegisteredDevice(_deviceAddr) != null) {
+			btnRename.setEnabled(true);
+		} else {
+			btnRename.setEnabled(false);
+		}
 
-        final Button btnRegister =
-        	(Button) findViewById(R.id.btn_register);
+        final Button btnRegister = (Button) findViewById(R.id.btn_register);
         btnRegister.setOnClickListener(
         	new View.OnClickListener() {
 				@Override
 				public void onClick(View arg0) {
-					if (registerDevice() != Status.OK) {
+					if (registerDevice() != PSStatus.OK) {
 						display("Registration Failed!");
 					}
 
@@ -133,8 +124,7 @@ public class AppModeConfigBeaconActivity extends Activity {
 			}
         );
 
-        final Button btnDelete  =
-            (Button) findViewById(R.id.btn_delete);
+        final Button btnDelete = (Button) findViewById(R.id.btn_delete);
         btnDelete.setOnClickListener(
             new View.OnClickListener() {
 				@Override
@@ -150,8 +140,7 @@ public class AppModeConfigBeaconActivity extends Activity {
             }
         );
 
-        final Button btnReqGuardList =
-            (Button) findViewById(R.id.btn_req_guard_list);
+        final Button btnReqGuardList = (Button) findViewById(R.id.btn_req_guard_list);
         btnReqGuardList.setOnClickListener(
 				new View.OnClickListener() {
 					@Override
@@ -167,11 +156,11 @@ public class AppModeConfigBeaconActivity extends Activity {
 				}
 		);
 
+		/* Invoke onCreate() on our superclass to start the service */
+		super.onCreate(savedInstanceState);
 
-		if (!_bIsBound) {
-			Intent bindServiceIntent = new Intent(this, ProjectSidekickService.class);
-			bindService(bindServiceIntent, _serviceConnection, Context.BIND_AUTO_CREATE);
-		}
+		/* Set our local message handler for use with service queries */
+		setMessageHandler(new MessageHandler());
 
         return;
     }
@@ -224,24 +213,18 @@ public class AppModeConfigBeaconActivity extends Activity {
 		return;
 	}
 
-
-
 	@Override
 	protected void onDestroy() {
 		Logger.info("onDestroy() called for " + this.getLocalClassName());
-		Status status;
-		status = callService(ProjectSidekickService.MSG_STOP);
-		if (status != Status.OK) {
+		PSStatus PSStatus;
+		PSStatus = callService(ProjectSidekickService.MSG_STOP);
+		if (PSStatus != PSStatus.OK) {
 			display("Failed to stop service");
 			return;
 		}
 		display("Stopped service");
 
-		if (_bIsBound) {
-			unbindService(_serviceConnection);
-			_bIsBound = false;
-		}
-
+		/* Invoke onDestroy() on our superclass to unbind from the service */
 		super.onDestroy();
 		return;
 	}
@@ -254,82 +237,45 @@ public class AppModeConfigBeaconActivity extends Activity {
         return;
     }
 
-	private Status queryService(int msgId) {
-		return callService(msgId, null, _messenger);
-	}
-
-	private Status queryService(int msgId, Bundle extras) {
-		return callService(msgId, extras, _messenger);
-	}
-
-    private Status callService(int msgId) {
-		return callService(msgId, null, null);
-    }
-
-    private Status callService(int msgId, Bundle extras, Messenger localMessenger) {
-    	if (_service == null) {
-    		Logger.err("Service unavailable");
-    		return Status.FAILED;
-    	}
-
-    	if (!_bIsBound) {
-    		Logger.err("Service unavailable");
-    		return Status.FAILED;
-    	}
-
-		Message msg = Message.obtain(null, msgId, 0, 0);
-		msg.replyTo = localMessenger;
-		msg.setData(extras);
-
-		try {
-			_service.send(msg);
-		} catch (Exception e) {
-			Logger.err("Failed to call service: " + e.getMessage());
-			return Status.FAILED;
-		}
-
-		return Status.OK;
-    }
-
-    private Status connectToDevice() {
-		Status status;
-		status = callService(ProjectSidekickService.MSG_SET_AS_MOBILE);
-		if (status != Status.OK) {
+    private PSStatus connectToDevice() {
+		PSStatus PSStatus;
+		PSStatus = callService(ProjectSidekickService.MSG_SET_AS_MOBILE);
+		if (PSStatus != PSStatus.OK) {
 			display("Failed set role to MOBILE");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 
-		status = callService(ProjectSidekickService.MSG_START_SETUP);
-		if (status != Status.OK) {
+		PSStatus = callService(ProjectSidekickService.MSG_START_SETUP);
+		if (PSStatus != PSStatus.OK) {
 			display("Failed start SETUP Mode");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 
 		Bundle extras = new Bundle();
 		extras.putString("DEVICE_ADDR", _deviceAddr);
-		status = callService(ProjectSidekickService.MSG_CONNECT, extras, null);
-		if (status != Status.OK) {
+		PSStatus = callService(ProjectSidekickService.MSG_CONNECT, extras, null);
+		if (PSStatus != PSStatus.OK) {
 			display("Failed attempt connection");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 
-        return Status.OK;
+        return PSStatus.OK;
     }
 
-    private Status registerDevice() {
+    private PSStatus registerDevice() {
     	if (!_isConnected) {
     		display("Not yet connected!");
-    		return Status.FAILED;
+    		return PSStatus.FAILED;
     	}
 
-		Status status;
+		PSStatus PSStatus;
 
 		Bundle extras = new Bundle();
 		extras.putString("DEVICE_ADDR", _deviceAddr);
-		status = callService(ProjectSidekickService.MSG_SEND_REGISTER, extras, null);
-		if (status != Status.OK) {
+		PSStatus = callService(ProjectSidekickService.MSG_SEND_REGISTER, extras, null);
+		if (PSStatus != PSStatus.OK) {
 			display("Failed send register request");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		display("Register request sent");
 
@@ -337,39 +283,39 @@ public class AppModeConfigBeaconActivity extends Activity {
 		_app.addRegisteredDevice(new KnownDevice(_deviceName, _deviceAddr));
         _app.saveRegisteredDevices();
 
-    	return Status.OK;
+    	return PSStatus.OK;
     }
 
-    private Status requestGuardList() {
+    private PSStatus requestGuardList() {
     	if (!_isConnected) {
     		display("Not yet connected!");
-    		return Status.FAILED;
+    		return PSStatus.FAILED;
     	}
 
-		Status status;
+		PSStatus PSStatus;
 
 		Bundle extras = new Bundle();
 		extras.putString("DEVICE_ADDR", _deviceAddr);
-		status = callService(ProjectSidekickService.MSG_SEND_GET_LIST, extras, null);
-		if (status != Status.OK) {
+		PSStatus = callService(ProjectSidekickService.MSG_SEND_GET_LIST, extras, null);
+		if (PSStatus != PSStatus.OK) {
 			display("Failed send retrieve guard list request");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		display("Retrieving guard list...");
 
-    	return Status.OK;
+    	return PSStatus.OK;
     }
 
-    private Status disconnectDevice() {
-		Status status;
-		status = callService(ProjectSidekickService.MSG_DISCONNECT);
-		if (status != Status.OK) {
+    private PSStatus disconnectDevice() {
+		PSStatus PSStatus;
+		PSStatus = callService(ProjectSidekickService.MSG_DISCONNECT);
+		if (PSStatus != PSStatus.OK) {
 			display("Failed to disconnectdevice");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		display("Device has been disconnected");
 
-        return Status.OK;
+        return PSStatus.OK;
     }
 
     private void updateGuiToConnected() {
@@ -420,7 +366,7 @@ public class AppModeConfigBeaconActivity extends Activity {
         return;
     }
 
-	private void reloadDeviceInfo() {
+	private void guiReloadDeviceInfo() {
         TextView txvDvcInfo = (TextView) findViewById(R.id.txv_dvc_info);
         txvDvcInfo.setText(_deviceName + "\n" + _deviceAddr);
         return;
@@ -446,12 +392,12 @@ public class AppModeConfigBeaconActivity extends Activity {
 					fkd.setName(nameStr);
 
 					_app = getAppRef();
-					if (_app.updateRegisteredDevice(fkd) != Status.OK) {
+					if (_app.updateRegisteredDevice(fkd) != PSStatus.OK) {
 						Logger.err("Device not registered. Renaming is meaningless.");
 					}
 
 					_deviceName = nameStr;
-					reloadDeviceInfo();
+					guiReloadDeviceInfo();
 
 					display("Renamed!");
 					return;
@@ -487,9 +433,10 @@ public class AppModeConfigBeaconActivity extends Activity {
 				@Override
 				public void onClick(DialogInterface dialog, int which) {
 
-					if (_app.removeRegisteredDevice(fkd.getAddress()) != Status.OK) {
+					if (_app.removeRegisteredDevice(fkd.getAddress()) != PSStatus.OK) {
 						Logger.err("Device not registered. Deletion is meaningless.");
 					}
+					_app.saveRegisteredDevices();
 
 					display("Deleted!");
 					return;
@@ -513,25 +460,25 @@ public class AppModeConfigBeaconActivity extends Activity {
 		return (ProjectSidekickApp) getApplication();
 	}
 
-	private Status queryServiceState() {
-		Status status;
-		status = callService(ProjectSidekickService.MSG_QUERY_STATE);
-		if (status != Status.OK) {
+	private PSStatus queryServiceState() {
+		PSStatus PSStatus;
+		PSStatus = callService(ProjectSidekickService.MSG_QUERY_STATE);
+		if (PSStatus != PSStatus.OK) {
 			display("Failed query the service state");
-			return Status.FAILED;
+			return PSStatus.FAILED;
 		}
 		Logger.info("Querying service state");
-		return Status.OK;
+		return PSStatus.OK;
 	}
 
-	private Status handleServiceState(String stateStr) {
+	private PSStatus handleServiceState(String stateStr) {
 		ServiceState s = ServiceState.valueOf(stateStr);
 		Logger.info("Detected Service State to be " + s);
 
-		return Status.OK;
+		return PSStatus.OK;
 	}
 
-	private Status handleBluetoothState(String stateStr) {
+	private PSStatus handleBluetoothState(String stateStr) {
 		BTState state = BTState.valueOf(stateStr);
 		Logger.info("Detected Bluetooth State to be " + state);
 
@@ -543,7 +490,7 @@ public class AppModeConfigBeaconActivity extends Activity {
 			_isConnected = true;
 		}
 
-		return Status.OK;
+		return PSStatus.OK;
 	}
 
 	/* ********************* */
@@ -552,7 +499,7 @@ public class AppModeConfigBeaconActivity extends Activity {
 	private class MessageHandler extends Handler {
 		@Override
 		public void handleMessage(Message msg) {
-			Status status = Status.FAILED;
+			PSStatus status = PSStatus.FAILED;
 
 			Bundle stateBundle = msg.getData();
 			switch (msg.what) {
@@ -571,7 +518,7 @@ public class AppModeConfigBeaconActivity extends Activity {
 					break;
 			}
 
-			if (status != Status.OK) {
+			if (status != PSStatus.OK) {
 				/* TODO Do something */
 				Logger.err("Failed to handle message code: " + msg.what);
 			}
@@ -579,28 +526,6 @@ public class AppModeConfigBeaconActivity extends Activity {
 			return;
 		}
 	}
-
-	private ServiceConnection _serviceConnection = new ServiceConnection() {
-		@Override
-		public void onServiceDisconnected(ComponentName className) {
-			_service = null;
-			_bIsBound = false;
-
-			return;
-		}
-
-		@Override
-		public void onServiceConnected(ComponentName className, IBinder binder) {
-			_service = new Messenger(binder);
-			_bIsBound = true;
-
-			/* Query the service state so that we can update the GUI accordingly */
-			queryService(ProjectSidekickService.MSG_QUERY_STATE);
-			queryService(ProjectSidekickService.MSG_QUERY_BT_STATE);
-
-			return;
-		}
-	};
 
 	private final BroadcastReceiver _receiver = new BroadcastReceiver() {
 	    public void onReceive(Context context, Intent intent) {

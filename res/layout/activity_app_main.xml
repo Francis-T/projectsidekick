@@ -5,12 +5,27 @@
     android:orientation="vertical"
     tools:context="${relativePackage}.${activityClass}" >
 
-    <ImageButton
-        android:id="@+id/btn_discover"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:src="@android:drawable/ic_menu_search"
-        android:contentDescription="Discover" />
+        android:layout_height="60dip"
+        android:orientation="horizontal">
+        <ImageButton
+            android:id="@+id/btn_guard"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:src="@android:drawable/ic_lock_lock"
+            android:contentDescription="Guard"
+            android:paddingLeft="25dip"
+            android:paddingRight="25dip" />
+        <ImageButton
+            android:id="@+id/btn_discover"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:src="@android:drawable/ic_menu_search"
+            android:contentDescription="Discover"
+            android:paddingLeft="25dip"
+            android:paddingRight="25dip" />
+    </LinearLayout>
 
     <ListView
         android:id="@android:id/list"

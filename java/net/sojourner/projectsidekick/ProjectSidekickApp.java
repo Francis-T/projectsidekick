@@ -8,8 +8,7 @@ import java.util.Set;
 import net.sojourner.projectsidekick.android.AndroidBluetoothBridge;
 import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
 import net.sojourner.projectsidekick.types.KnownDevice;
-import net.sojourner.projectsidekick.types.KnownDevice.DeviceStatus;
-import net.sojourner.projectsidekick.types.Status;
+import net.sojourner.projectsidekick.types.PSStatus;
 import net.sojourner.projectsidekick.utils.Logger;
 import android.app.Application;
 import android.content.SharedPreferences;
@@ -49,24 +48,24 @@ public class ProjectSidekickApp extends Application {
     	return new ArrayList<KnownDevice>(_registeredDevices);
     }
     
-    public Status addRegisteredDevice(KnownDevice device) {
+    public PSStatus addRegisteredDevice(KnownDevice device) {
     	/* Check if we already have this device in our list */
     	for (KnownDevice kd : _registeredDevices) {
     		if (kd.addressMatches(device.getAddress())) {
     			Logger.warn("Device already registered");
-    			return Status.OK;
+    			return PSStatus.OK;
     		}
     	}
     	
     	if (_registeredDevices.add(device) != true) {
     		Logger.err("Failed to add device");
-    		return Status.FAILED;
+    		return PSStatus.FAILED;
     	}
     	
-    	return Status.OK;
+    	return PSStatus.OK;
     }
     
-    public Status updateRegisteredDevice(KnownDevice device) {
+    public PSStatus updateRegisteredDevice(KnownDevice device) {
     	/* Check if we already have this device in our list */
     	for (KnownDevice kd : _registeredDevices) {
     		if (kd.addressMatches(device.getAddress())) {
@@ -75,26 +74,26 @@ public class ProjectSidekickApp extends Application {
     			/* Simply update our registered device's name */
     			kd.setName(device.getName());
     			
-    			return Status.OK;
+    			return PSStatus.OK;
     		}
     	}
     	Logger.err("Device not found");
-    	return Status.FAILED;
+    	return PSStatus.FAILED;
     }
     
-    public Status removeRegisteredDevice(String address) {
+    public PSStatus removeRegisteredDevice(String address) {
     	KnownDevice target = findRegisteredDevice(address);
     	if (target == null) {
     		Logger.err("Device not found");
-    		return Status.OK;
+    		return PSStatus.OK;
     	}
     	
     	if (_registeredDevices.remove(target) == false) {
     		Logger.err("Failed to remove registered device from list");
-    		return Status.FAILED;
+    		return PSStatus.FAILED;
     	}
     	
-    	return Status.OK;
+    	return PSStatus.OK;
     }
     
     public KnownDevice findRegisteredDevice(String address) {

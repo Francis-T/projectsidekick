@@ -1,5 +1,5 @@
 package net.sojourner.projectsidekick.types;
 
-public enum Status {
+public enum PSStatus {
 	OK, FAILED
 }
