@@ -7,6 +7,8 @@ public interface IBluetoothBridge {
 	public String getId();
 	public String getPlatform();
 	public BTState getState();
+	public String getLocalName();
+	public String getLocalAddress();
 	public boolean isReady();
 	public PSStatus initialize(Object initObject, boolean isServer);
 	public void startDeviceDiscovery();

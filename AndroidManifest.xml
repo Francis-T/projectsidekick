@@ -44,16 +44,10 @@
         </activity>
         <receiver android:name=".ReportModeWakeReceiver"></receiver>
         <service android:name=".ProjectSidekickService"
-                 android:process=".ProjectSidekickService">
+                 android:process=".ProjectSidekickService"
+                 android:exported="true">
             <intent-filter>
-                <action android:name="net.sojourner.projectsidekick.action.WAKE_TO_REPORT" />
-                <action android:name="net.sojourner.projectsidekick.action.CONNECTED" />
-                <action android:name="net.sojourner.projectsidekick.action.REGISTERED" />
-                <action android:name="net.sojourner.projectsidekick.action.UNREGISTERED" />
-                <action android:name="net.sojourner.projectsidekick.action.UPDATE_LOST" />
-                <action android:name="net.sojourner.projectsidekick.action.UPDATE_FOUND" />
-                <action android:name="net.sojourner.projectsidekick.action.DATARECEIVED" />
-                <action android:name="net.sojourner.projectsidekick.action.DISCONNECTED" />
+                <action android:name="net.sojourner.projectsidekick.action.BIND_TO_SERVICE" />
             </intent-filter>
         </service>
     </application>

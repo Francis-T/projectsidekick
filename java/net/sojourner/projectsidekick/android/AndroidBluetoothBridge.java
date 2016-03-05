@@ -81,6 +81,24 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 	}
 
 	@Override
+	public String getLocalName() {
+		if (_bluetoothAdapter == null) {
+			return "Unknown";
+		}
+
+		return _bluetoothAdapter.getName();
+	}
+
+	@Override
+	public String getLocalAddress() {
+		if (_bluetoothAdapter == null) {
+			return "Unknown";
+		}
+
+		return _bluetoothAdapter.getAddress();
+	}
+
+	@Override
 	public synchronized BTState getState() {
 		return _state;
 	}
