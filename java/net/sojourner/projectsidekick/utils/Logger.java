@@ -15,4 +15,9 @@ public class Logger {
 		Log.w("Warn", msg);
 		return;
 	}
+
+	public static void dbg(String msg) {
+		Log.d("Debug", msg);
+		return;
+	}
 }

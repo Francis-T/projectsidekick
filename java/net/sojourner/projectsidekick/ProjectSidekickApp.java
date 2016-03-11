@@ -6,23 +6,48 @@ import java.util.List;
 import java.util.Set;
 
 import net.sojourner.projectsidekick.android.AndroidBluetoothBridge;
+import net.sojourner.projectsidekick.android.AndroidBluetoothLeBridge;
 import net.sojourner.projectsidekick.interfaces.IBluetoothBridge;
 import net.sojourner.projectsidekick.types.KnownDevice;
 import net.sojourner.projectsidekick.types.PSStatus;
 import net.sojourner.projectsidekick.utils.Logger;
 import android.app.Application;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Build;
+import android.widget.Toast;
 
 public class ProjectSidekickApp extends Application {
-	private static IBluetoothBridge _bluetoothBridge = AndroidBluetoothBridge.getInstance();
+	private static IBluetoothBridge _bluetoothBridge = null;
 	public static enum Mode { UNSET, APP, BEACON };
 	public static final int REQUEST_BLUETOOTH_DISCOVERABLE 	= 0xB0;
 	public static final int REQUEST_CODE_BLUETOOTH_ENABLE 	= 0xB1;
 	
     private List<KnownDevice> _registeredDevices = new ArrayList<KnownDevice>();
 	private Mode _mode = Mode.UNSET;
-	
+
+	@Override
+	public void onCreate() {
+		super.onCreate();
+
+		/* Check if we're on a Bluetooth LE enabled device and adjust our Bluetooth Bridge
+		* 	choices accordingly */
+		/* From developer.android.com:
+		 * "Use this check to determine whether BLE is supported on the device. Then
+		 *  you can selectively disable BLE-related features." */
+		if (getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+			Toast.makeText(this, "Congratulations! Your device is Bluetooth LE capable!", Toast.LENGTH_SHORT).show();
+			_bluetoothBridge = AndroidBluetoothLeBridge.getInstance();
+		} else if (getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH)) {
+			Toast.makeText(this, "Congratulations! Your device is Classic Bluetooth capable!", Toast.LENGTH_SHORT).show();
+			_bluetoothBridge = AndroidBluetoothBridge.getInstance();
+		} else {
+			Toast.makeText(this, "I'm sorry, your device has no Bluetooth capabilities.", Toast.LENGTH_SHORT).show();
+		}
+
+		return;
+	}
+
 	public IBluetoothBridge getBluetoothBridge() {
 		if (_bluetoothBridge == null) {
 			Logger.err("Bluetooth Bridge is Unavailable");

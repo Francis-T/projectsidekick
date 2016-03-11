@@ -44,7 +44,7 @@ public class AppModeBeaconMasterListActivity extends ServiceBindingListActivity 
 
 						/* Pick the master list item for removal and pass it to a dialog box */
 						MasterListItem listItem = _masterListAdapter.getItem(pos);
-						showRemoveFromMasterListDialog(listItem.getAddress());
+						showRemoveFromMasterListDialog(listItem.getAddress(), listItem.getId());
 
 						return;
 					}
@@ -82,12 +82,13 @@ public class AppModeBeaconMasterListActivity extends ServiceBindingListActivity 
         return;
     }
 
-	private void showRemoveFromMasterListDialog(String address) {
+	private void showRemoveFromMasterListDialog(String address, int id) {
 		if (_app == null) {
 			_app = (ProjectSidekickApp) getApplication();
 		}
 		
 		final String deviceAddr = address;
+		final int deviceId = id;
 		
 		AlertDialog.Builder dlgBuilder = new AlertDialog.Builder(this);
 		
@@ -98,7 +99,7 @@ public class AppModeBeaconMasterListActivity extends ServiceBindingListActivity 
 				@Override
 				public void onClick(DialogInterface dialog, int which) {
 					Bundle data = new Bundle();
-					data.putString("DEVICE_ADDR", deviceAddr);
+					data.putInt("DEVICE_ID", deviceId);
 					callService(ProjectSidekickService.MSG_UNREG_DEVICE, data, null);
 					display("Delete requested!");
 					return;

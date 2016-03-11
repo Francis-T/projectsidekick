@@ -6,6 +6,7 @@ import net.sojourner.projectsidekick.utils.Logger;
  * Created by francis on 2/20/16.
  */
 public class MasterListItem {
+    private int     _id = -1;
     private String 	_name = "";
     private String 	_addr = "";
     private boolean _bIsGuarded = false;
@@ -22,11 +23,17 @@ public class MasterListItem {
      */
     public static MasterListItem parse(String itemStr) {
         String itemStrPart[] = itemStr.split(_delim);
-        if (itemStrPart.length != 3) {
+        if (itemStrPart.length != 4) {
             Logger.err("Invalid input string: " + itemStrPart.length);
             return null;
         }
-        return new MasterListItem(itemStrPart[0], itemStrPart[1], itemStrPart[2]);
+        int id = -1;
+        try {
+            id = Integer.valueOf(itemStrPart[0]);
+        } catch (NumberFormatException e) {
+            id = -1;
+        }
+        return new MasterListItem(id, itemStrPart[1], itemStrPart[2], itemStrPart[3]);
     }
 
     public MasterListItem(String name, String address, String guardStatus) {
@@ -40,6 +47,24 @@ public class MasterListItem {
         }
 
         return;
+    }
+
+    public MasterListItem(int id, String name, String address, String guardStatus) {
+        _id = id;
+        _name = name;
+        _addr = address;
+
+        if (guardStatus.equalsIgnoreCase("Guarded")) {
+            _bIsGuarded = true;
+        } else {
+            _bIsGuarded = false;
+        }
+
+        return;
+    }
+
+    public int getId() {
+        return _id;
     }
 
     public String getAddress() {
@@ -59,7 +84,7 @@ public class MasterListItem {
     }
 
     public String toString() {
-        return getName() + "\n" +
+        return getId() + ": " + getName() + "\n" +
                 getAddress() + "\n" +
                 getGuardStatus();
     }

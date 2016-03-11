@@ -1,6 +1,16 @@
 package net.sojourner.projectsidekick;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.SequenceInputStream;
+import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
@@ -67,6 +77,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	private static final String RXX_TERM			= ";";
 	private static final String RXX_DELIM			= ",";
 	private static final String RXX_ACK				= "1" + RXX_TERM;
+	private static final String	RXX_EOT				= Character.toString((char)(0x4));
 
 	private static final String REQ_PREF_REGISTER 		= "XREG";
 	private static final String REQ_PREF_GET_LIST 		= "XLST";
@@ -100,12 +111,12 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 
 	private static final int  MAX_DEVICE_NAME_LEN 				= 20;
 	private static final int IDX_DVC_ID 						= 0;
-	private static final int IDX_DVC_STAT 						= 1;
-	private static final int IDX_DVC_NAME 						= 2;
-	private static final int IDX_DVC_ADDR 						= 22;
-	private static final int IDX_DVC_LAST 						= 34;
-	private static final int IDX_PAYLOAD_DATA_OFFS				= 4;
-	private static final int MAX_DEVICE_DATA_LEN 				= 35;
+	private static final int IDX_DVC_STAT 						= 2;
+	private static final int IDX_DVC_NAME 						= 3;
+	private static final int IDX_DVC_ADDR 						= 23;
+	private static final int IDX_DVC_LAST 						= 35;
+	private static final int IDX_PAYLOAD_DATA_OFFS				= 6;
+	private static final int MAX_DEVICE_DATA_LEN 				= 36;
 	private static final int  MAX_DEVICE_ADDR_LEN 				= 12;
 
 	private enum Role {
@@ -344,6 +355,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	private PSStatus startDiscovery() {
 		_app = getAppRef();
 		_bluetoothBridge = _app.getBluetoothBridge();
+		_bluetoothBridge.initialize(this, false);
 		_bluetoothBridge.startDeviceDiscovery();
 		return PSStatus.OK;
 	}
@@ -555,14 +567,25 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		String dvcAddr = compressDeviceAddress(_bluetoothBridge.getLocalAddress());
 
 		/* Create the request string */
-		String request = REQ_PREF_REGISTER + dvcName + RXX_DELIM + dvcAddr + RXX_TERM;
+		String request = dvcName + RXX_DELIM + dvcAddr + RXX_TERM;
 
 		setState(ServiceState.REGISTERING);
 
 		PSStatus status;
-		status = _bluetoothBridge.broadcast(request.getBytes());
+		status = performBroadcast(_bluetoothBridge, REQ_PREF_REGISTER.getBytes());
 		if (status != PSStatus.OK) {
-			Logger.err("Failed to broadcast REGISTER command to " + remoteAddr);
+			Logger.err("Failed to broadcast REGISTER command header to " + remoteAddr);
+			return PSStatus.FAILED;
+		}
+
+		status = performBroadcast(_bluetoothBridge, request.getBytes());
+		if (status != PSStatus.OK) {
+			Logger.err("Failed to broadcast REGISTER command header to " + remoteAddr);
+			return PSStatus.FAILED;
+		}
+
+		if (status != PSStatus.OK) {
+			Logger.err("Failed to broadcast REGISTER command data to " + remoteAddr);
 			return PSStatus.FAILED;
 		}
 
@@ -573,27 +596,41 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		_app = getAppRef();
 		_bluetoothBridge = _app.getBluetoothBridge();
 
-		String request = REQ_PREF_GET_LIST + RXX_ACK;
+		String request = RXX_ACK;
 
 		PSStatus status;
-		status = _bluetoothBridge.broadcast(request.getBytes());
+		status = performBroadcast(_bluetoothBridge, REQ_PREF_GET_LIST.getBytes());
 		if (status != PSStatus.OK) {
-			Logger.err("Failed to broadcast LIST command to " + address);
+			Logger.err("Failed to broadcast LIST command header to " + address);
+			return PSStatus.FAILED;
+		}
+
+		status = performBroadcast(_bluetoothBridge, request.getBytes());
+		if (status != PSStatus.OK) {
+			Logger.err("Failed to broadcast LIST command data to " + address);
 			return PSStatus.FAILED;
 		}
 
 		return PSStatus.OK;
 	}
 
-	private PSStatus sendUnregisterRequest(String address) {
+	private PSStatus sendUnregisterRequest(int deviceId) {
 		_app = getAppRef();
 		_bluetoothBridge = _app.getBluetoothBridge();
 
 		PSStatus status;
-		String msg = "DELETE " + address;
-		status = _bluetoothBridge.broadcast(msg.getBytes());
+		//String msg = "DELETE " + address;
+
+		status = performBroadcast(_bluetoothBridge, REQ_PREF_DELETE.getBytes());
 		if (status != PSStatus.OK) {
-			Logger.err("Failed to broadcast DELETE command to " + address);
+			Logger.err("Failed to broadcast DELETE command header");
+			return PSStatus.FAILED;
+		}
+
+		String request = deviceId + ";";
+		status = performBroadcast(_bluetoothBridge, request.getBytes());
+		if (status != PSStatus.OK) {
+			Logger.err("Failed to broadcast DELETE command data");
 			return PSStatus.FAILED;
 		}
 
@@ -1025,28 +1062,148 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		return dvcAddr;
 	}
 
+	/* TODO !!! This part badly needs refactoring */
 	private String decodeBinaryDeviceList(byte[] list, int iInitOffs) {
 		String dvcListStr = "";
-		int iOffs = iInitOffs;
+		String rawListStr = new String(list, iInitOffs, (list.length-iInitOffs) );
 
-		while (iOffs < list.length) {
-			//dvcListStr += Byte.toString(data[iOffs + IDX_DVC_ID]);
-			dvcListStr += new String(list, (iOffs + IDX_DVC_NAME), MAX_DEVICE_NAME_LEN);
-			dvcListStr += "|";
-			dvcListStr += restoreDeviceAddress(new String(list, (iOffs + IDX_DVC_ADDR), MAX_DEVICE_ADDR_LEN));
-			dvcListStr += "|";
-			dvcListStr += list[iOffs + IDX_DVC_STAT] > 0 ? "Guarded" : "Not Guarded";
+		String rawListPart[] = rawListStr.split(",");
 
-			if (list[iOffs + IDX_DVC_LAST] == ';') {
-				break;
-			} else {
-				dvcListStr += ",";
+		for (int iIdx = 0; iIdx < rawListPart.length; iIdx++) {
+			StringReader sr = new StringReader(rawListPart[iIdx]);
+
+			try {
+				int iDvcId = sr.read();
+				if (iDvcId >= 49) {
+					/* If our device id is in ASCII, correct it to the actual value
+					 *	through subtraction */
+					iDvcId -= 48;
+				}
+				int iStatus = sr.read();
+
+				char cHexPair[] = new char[2];
+
+				/* Capture the device name */
+				String deviceName = "";
+				int cConv = 0;
+				while (sr.read(cHexPair, 0, 2) > 0) {
+					cConv = Integer.decode("0x" + cHexPair[0] + "" + cHexPair[1]);
+					deviceName += (char) cConv;
+
+					if (cHexPair[1] == '0') {
+						if ( (cHexPair[0] == '2') || (cHexPair[0] == '0') ) {
+							break;
+						}
+					} else if ((cHexPair[0] == ';') || (cHexPair[1] == ';')) {
+						break;
+					}
+				}
+				Logger.info("Device Name: " + deviceName);
+
+				/* Skip over the unnecessary */
+				boolean isNextPartFound = false;
+				if (cHexPair[0] == '0') {
+					char cRead = '0';
+					while (cRead <= '0') {
+						cRead = (char)(sr.read());
+						if (cRead < 0) {
+							break;
+						}
+						Logger.dbg("Found: " + cRead);
+					}
+
+					if (cRead > '0') {
+						cHexPair[0] = cRead;
+						cHexPair[1] = (char) sr.read();
+						isNextPartFound = true;
+						Logger.dbg("Found: " + cHexPair[0] + ", " + cHexPair[1]);
+					}
+				} else {
+					while (sr.read(cHexPair, 0, 2) > 0) {
+						if (cHexPair[0] != '2' || cHexPair[1] != '0') {
+							isNextPartFound = true;
+							break;
+						}
+					}
+				}
+
+				if (!isNextPartFound) {
+					Logger.err("Got to end of string without finding device address start");
+					sr.close();
+					break;
+				}
+
+				/* Capture the device address */
+				String deviceAddr = "";
+
+				cConv = Integer.decode("0x" + cHexPair[0] + "" + cHexPair[1]);
+				deviceAddr += (char) cConv;
+
+				Logger.dbg("Capturing device address...");
+				while (sr.read(cHexPair, 0, 2) > 0) {
+					Logger.dbg("Found: " + cHexPair[0] + ", " + cHexPair[1]);
+					if ((cHexPair[0] == ';') || (cHexPair[1] == ';')) {
+						Logger.dbg("Got to end of string");
+						break;
+					}
+					cConv = Integer.decode("0x" + cHexPair[0] + "" + cHexPair[1]);
+					deviceAddr += (char) cConv;
+
+					if (cHexPair[1] == '0') {
+						if ( (cHexPair[0] == '2') || (cHexPair[0] == '0') ) {
+							break;
+						}
+					}
+				}
+				Logger.info("Device Address (Raw): " + deviceAddr);
+				Logger.info("Device Address: " + restoreDeviceAddress(deviceAddr));
+
+				dvcListStr += iDvcId + "|" + deviceName + "|" + restoreDeviceAddress(deviceAddr) +
+						"|" + (iStatus == '1' ? "Guarded" : "Not Guarded");
+
+				sr.close();
+			} catch (Exception e) {
+				Logger.err("Exception occurred: " + e.getMessage());
 			}
 
-			iOffs += MAX_DEVICE_DATA_LEN;
+			if ((iIdx+1) < rawListPart.length) {
+				dvcListStr += ",";
+			}
 		}
 
 		return dvcListStr;
+	}
+
+	private PSStatus performBroadcast(IBluetoothBridge btBridge, byte data[]) {
+		if (data.length > 20) {
+			return broadcastAsStream(btBridge, data);
+		}
+
+		return broadcastDirectly(btBridge, data);
+	}
+
+	private PSStatus broadcastAsStream(IBluetoothBridge btBridge, byte data[]) {
+		ByteArrayInputStream byteStream = new ByteArrayInputStream(data);
+		byte sendBuffer[] = new byte[20];
+
+		int bytesRemaining = byteStream.available();
+		while (bytesRemaining > 0) {
+			Arrays.fill(sendBuffer, (byte)(0));
+
+			/* Read up to 20 bytes from the stream */
+			byteStream.read(sendBuffer, 0, 20);
+			if (btBridge.broadcast(sendBuffer) != PSStatus.OK) {
+				return PSStatus.FAILED;
+			}
+
+			bytesRemaining = byteStream.available();
+		}
+
+		return PSStatus.OK;
+	}
+
+	private PSStatus broadcastDirectly(IBluetoothBridge btBridge, byte data[]) {
+		return btBridge.broadcast(data);
 	}
 
 	/* ********************* */
@@ -1154,12 +1311,12 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				status = replyBluetoothState(msg.replyTo);
 				break;
 			case MSG_UNREG_DEVICE:
-				Bundle unregAddrData = msg.getData();
-				if (unregAddrData == null) {
+				Bundle unregDvcData = msg.getData();
+				if (unregDvcData == null) {
 					break;
 				}
-				String unregAddr = unregAddrData.getString("DEVICE_ADDR", "");
-				status = sendUnregisterRequest(unregAddr);
+				int unregDvcId = unregDvcData.getInt("DEVICE_ID", -1);
+				status = sendUnregisterRequest(unregDvcId);
 				break;
 			case MSG_SET_CHECK_MODE:
 				Bundle dvcCheckModeData = msg.getData();
@@ -1644,12 +1801,12 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				return null;
 			}
 
-			String 	sender = recvData.getSenderName();
-			String 	address = recvData.getSenderAddress();
-			byte 	data[] = recvData.getData();
-			String 	prefix = new String(data, 0, 4);
+			String sender = recvData.getSenderName();
+			String address = recvData.getSenderAddress();
+			byte data[] = recvData.getData();
+			String prefix = new String(data, 0, 4);
 			boolean suppressDisplay = false;
-			
+
 			/* Check request contents */
 			if (prefix.startsWith(REQ_PREF_REGISTER)) {
 				handleRegisterRequest(sender, address, data);
@@ -1667,7 +1824,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				handleGetListResponse(sender, address, data);
 				suppressDisplay = true;
 			} else {
-				Logger.warn("Unknown handling for received data: " + prefix);
+				Logger.warn("Unknown handling for received data: " + new String(data));
 			}
 
 			/* Broadcast our received data for our receivers */
@@ -1693,6 +1850,22 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 
 			super.onProgressUpdate(values);
 			return;
+		}
+
+		private boolean checkReceivedHeader(String header) {
+			String hdrTbl[] = {
+					REQ_PREF_REGISTER, REQ_PREF_REPORT_LOSS, REQ_PREF_GET_LIST, REQ_PREF_DELETE,
+					REQ_PREF_DISCONNECT, "RWO", RES_PREF_GET_LIST
+			};
+
+			for (String hdrMatch : hdrTbl) {
+				if (header.startsWith(hdrMatch)) {
+					Logger.info("Header matched: " + hdrMatch);
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		private void handleRegisterRequest(String name, String addr, byte data[]) {

@@ -352,6 +352,11 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 	}
 
 	@Override
+	public PSStatus read(String address){
+		return PSStatus.FAILED;
+	}
+
+	@Override
 	public PSStatus destroy() {
 		if (stop() != PSStatus.OK)
 		{

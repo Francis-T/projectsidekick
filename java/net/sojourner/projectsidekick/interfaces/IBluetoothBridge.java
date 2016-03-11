@@ -18,6 +18,7 @@ public interface IBluetoothBridge {
 	public PSStatus connectDeviceByName(String name);
 	public PSStatus disconnectDeviceByAddress(String address);
 	public PSStatus broadcast(byte[] data);
+	public PSStatus read(String address);
 	public PSStatus destroy();
 	public PSStatus setEventHandler(BluetoothEventHandler eventHandler);
 }

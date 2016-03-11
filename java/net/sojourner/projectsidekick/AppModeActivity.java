@@ -3,6 +3,7 @@ package net.sojourner.projectsidekick;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.sojourner.projectsidekick.android.AndroidBluetoothLeBridge;
 import net.sojourner.projectsidekick.types.KnownDevice;
 import net.sojourner.projectsidekick.types.KnownDevice.DeviceStatus;
 import net.sojourner.projectsidekick.types.PSStatus;
@@ -128,6 +129,7 @@ public class AppModeActivity extends ServiceBindingListActivity {
 		if (_receiver != null) {
 			IntentFilter filter = new IntentFilter();
 			filter.addAction(BluetoothDevice.ACTION_FOUND);
+			filter.addAction(AndroidBluetoothLeBridge.ACTION_LE_DISCOVERED);
 			filter.addAction(ProjectSidekickService.ACTION_REP_STARTED);
 			filter.addAction(ProjectSidekickService.ACTION_REP_FINISHED);
 			registerReceiver(_receiver, filter);
@@ -217,6 +219,14 @@ public class AppModeActivity extends ServiceBindingListActivity {
 		
 		return;
 	}
+	private BluetoothAdapter.LeScanCallback _leScanCbf = new BluetoothAdapter.LeScanCallback() {
+
+		@Override
+		public void onLeScan(BluetoothDevice device, int rssi, byte[] scanRecord) {
+			Toast.makeText(AppModeActivity.this, "Found device: " + device.getName(), Toast.LENGTH_SHORT).show();
+			return;
+		}
+	};
 
 	private void toggleGuardMode() {
 		PSStatus status;
@@ -368,7 +378,12 @@ public class AppModeActivity extends ServiceBindingListActivity {
 	            BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
 	            // Add the name and address to an array adapter to show in a ListView
 	            addKnownDevice(device.getName(), device.getAddress(), true);
-	        } else if (BluetoothAdapter.ACTION_DISCOVERY_STARTED.equals(action)) {
+	        } else if (AndroidBluetoothLeBridge.ACTION_LE_DISCOVERED.equals(action)) {
+				// Get the BluetoothDevice object from the Intent
+				BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+				// Add the name and address to an array adapter to show in a ListView
+				addKnownDevice(device.getName(), device.getAddress(), true);
+			} else if (BluetoothAdapter.ACTION_DISCOVERY_STARTED.equals(action)) {
 	        	Logger.info("Service Discovery Started (receiver)");
 	        } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
 	        	Logger.info("Service Discovery Finished (receiver)");

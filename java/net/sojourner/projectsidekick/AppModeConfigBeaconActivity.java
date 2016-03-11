@@ -538,7 +538,7 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 	        	updateGuiToDisconnected();
 	        	_isConnected = false;
 	        } else if (ProjectSidekickService.ACTION_DATA_RECEIVE.equals(action)) {
-	        	String msg = intent.getStringExtra("DATA");
+	        	String msg = intent.getStringExtra("SENDER_DATA");
 	        	display(msg);
 	        } else if (ProjectSidekickService.ACTION_LIST_RECEIVED.equals(action)) {
 	        	Intent listIntent
