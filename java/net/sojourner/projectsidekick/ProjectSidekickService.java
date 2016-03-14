@@ -102,6 +102,10 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	private static final String RES_PREF_GUARD_LOSS 	= "RALM";
 	private static final String RES_PREF_REPORT_LOSS	= "RALO";
 
+	public static final int		RES_CODE_REG_FAIL 		= '0';
+	public static final int 	RES_CODE_REG_OK 		= '1';
+	public static final int 	RES_CODE_REG_DUP 		= '2';
+
 	private static final long DEFAULT_SLEEP_TIME 				= 15000;
 	private static final long DEFAULT_AWAIT_SETUP_CONN_TIME		= 180000;
 	private static final long DEFAULT_AWAIT_REPORT_CONN_TIME	= 10000;
@@ -1086,19 +1090,32 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				/* Capture the device name */
 				String deviceName = "";
 				int cConv = 0;
+				int iCount = 0;
 				while (sr.read(cHexPair, 0, 2) > 0) {
+					/* Check if our Hex Pair is sane */
+					if ((cHexPair[0] < '0') || (cHexPair[0] > '9')) {
+						break;
+					}
+					if ((cHexPair[1] < '0') || (cHexPair[1] > '9')) {
+						break;
+					}
+
 					cConv = Integer.decode("0x" + cHexPair[0] + "" + cHexPair[1]);
 					deviceName += (char) cConv;
 
-					if (cHexPair[1] == '0') {
-						if ( (cHexPair[0] == '2') || (cHexPair[0] == '0') ) {
-							break;
-						}
+					if ((cHexPair[1] == '0') && (cHexPair[0] == '0')) {
+						break;
 					} else if ((cHexPair[0] == ';') || (cHexPair[1] == ';')) {
 						break;
 					}
+
+					/* In the fixed width implementation, we can use the MAX_DEVICE_NAME_LEN */
+					iCount++;
+					if (iCount >= MAX_DEVICE_NAME_LEN) {
+						break;
+					}
 				}
-				Logger.info("Device Name: " + deviceName);
+				Logger.info("Device Name: " + deviceName.trim());
 
 				/* Skip over the unnecessary */
 				boolean isNextPartFound = false;
@@ -1158,7 +1175,9 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				Logger.info("Device Address (Raw): " + deviceAddr);
 				Logger.info("Device Address: " + restoreDeviceAddress(deviceAddr));
 
-				dvcListStr += iDvcId + "|" + deviceName + "|" + restoreDeviceAddress(deviceAddr) +
+				dvcListStr += iDvcId +
+						"|" + deviceName.trim() +
+						"|" + restoreDeviceAddress(deviceAddr) +
 						"|" + (iStatus == '1' ? "Guarded" : "Not Guarded");
 
 				sr.close();
@@ -1810,6 +1829,10 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			/* Check request contents */
 			if (prefix.startsWith(REQ_PREF_REGISTER)) {
 				handleRegisterRequest(sender, address, data);
+				suppressDisplay = true;
+			} else if (prefix.startsWith(RES_PREF_REGISTER)) {
+				handleRegisterResponse(this, sender, address, data);
+				suppressDisplay = true;
 			} else if (prefix.startsWith(REQ_PREF_REPORT_LOSS)) {
 				handleReportRequest(sender, address, data);
 			} else if (prefix.startsWith(REQ_PREF_GET_LIST)) {
@@ -1821,7 +1844,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			} else if (prefix.startsWith("RWO")) {
 				handleRWOResponse(sender, address, data);
 			} else if (prefix.startsWith(RES_PREF_GET_LIST)) {
-				handleGetListResponse(sender, address, data);
+				handleGetListResponse(this, sender, address, data);
 				suppressDisplay = true;
 			} else {
 				Logger.warn("Unknown handling for received data: " + new String(data));
@@ -2087,6 +2110,34 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			return;
 		}
 
+		private void handleRegisterResponse(HandleReceivedDataTask handlerTask,
+											String name, String addr, byte[] data) {
+			if (getState() != ServiceState.REGISTERING) {
+				Logger.warn("Invalid state for REGISTER responses");
+				return;
+			}
+
+			/* Response code is a single-char in the payload, followed by a semi-colon */
+			int iRespCode = data[IDX_PAYLOAD_DATA_OFFS];
+
+			if (iRespCode == RES_CODE_REG_FAIL) {
+				// Registration failed
+				handlerTask.publishProgress("Registration failed");
+			} else if (iRespCode == RES_CODE_REG_DUP) {
+				// Already Registered
+				handlerTask.publishProgress("Already registered");
+			} else if (iRespCode == RES_CODE_REG_OK) {
+				// Registration OK
+				handlerTask.publishProgress("Registered");
+			} else {
+				Logger.err("Unknown Response: " + iRespCode);
+			}
+
+			setState(ServiceState.SETUP);
+
+			return;
+		}
+
 		/* TODO Not updated to current design */
 		private void handleRWOResponse(String name, String addr, byte[] data) {
 			ServiceState state = getState();
@@ -2113,10 +2164,13 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			return;
 		}
 
-		private void handleGetListResponse(String name, String addr, byte[] data) {
+		private void handleGetListResponse(HandleReceivedDataTask handlerTask,
+										   String name, String addr, byte[] data) {
 			/* Handle the GET LIST response */
 			String dvcListStr = decodeBinaryDeviceList(data, IDX_PAYLOAD_DATA_OFFS);
 			String devices[] = dvcListStr.split(",");
+
+			handlerTask.publishProgress("Device list received");
 			
 			/* Notify any interested activities */
 			Intent intent = new Intent(ACTION_LIST_RECEIVED);
