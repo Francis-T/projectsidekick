@@ -56,10 +56,11 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	public static final int MSG_SEND_GET_LIST 		= 12;
 	public static final int MSG_QUERY_STATE 		= 13;
 	public static final int MSG_QUERY_BT_STATE 		= 14;
-	public static final int MSG_UNREG_DEVICE 		= 15;
+	public static final int MSG_DELETE_DEVICE 		= 15;
 	public static final int MSG_SET_CHECK_MODE 		= 16;
 	public static final int MSG_SET_SLEEP_TIME 		= 17;
 	public static final int MSG_SET_ALARM_TOGGLE	= 18;
+	public static final int MSG_EDIT_GUARD_LST 		= 19;
 
 	public static final String ACTION_CONNECTED 	= "net.sojourner.projectsidekick.action.CONNECTED";
 	public static final String ACTION_DATA_RECEIVE	= "net.sojourner.projectsidekick.action.DATA_RECEIVED";
@@ -73,6 +74,8 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	public static final String ACTION_REG_FINISHED	= "net.sojourner.projectsidekick.action.REG_FINISHED";
 	public static final String ACTION_REP_STARTED	= "net.sojourner.projectsidekick.action.REP_STARTED";
 	public static final String ACTION_REP_FINISHED	= "net.sojourner.projectsidekick.action.REP_FINISHED";
+	public static final String ACTION_DELETED		= "net.sojourner.projectsidekick.action.DELETED";
+	public static final String ACTION_LIST_CHANGED	= "net.sojourner.projectsidekick.action.LIST_CHANGED";
 
 	private static final String RXX_TERM			= ";";
 	private static final String RXX_DELIM			= ",";
@@ -83,7 +86,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	private static final String REQ_PREF_GET_LIST 		= "XLST";
 	private static final String REQ_PREF_SET_NAME 		= "XNME";
 	private static final String REQ_PREF_DELETE 		= "XDEL";
-	private static final String REQ_PREF_GUARD_THEF_SET = "XATS";	// TODO This is XGSL in design. Bit inconsistent
+	private static final String REQ_PREF_GUARD_THEF_SET = "XGSL";	// TODO This is XGSL in design. Bit inconsistent
 	private static final String REQ_PREF_GUARD_THEF 	= "XATM";
 	private static final String REQ_PREF_REPORT_THEF 	= "XATO";
 	private static final String REQ_PREF_GUARD_LOSS_SET = "XALS";
@@ -95,7 +98,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	private static final String RES_PREF_GET_LIST 		= "RLST";
 	private static final String RES_PREF_SET_NAME 		= "RNME";
 	private static final String RES_PREF_DELETE 		= "RDEL";	// TODO No RDEL in design?
-	private static final String RES_PREF_GUARD_THEF_SET = "RATS";	// TODO This is RGSL in design. Bit inconsistent
+	private static final String RES_PREF_GUARD_THEF_SET = "RGSL";	// TODO This is RGSL in design. Bit inconsistent
 	private static final String RES_PREF_GUARD_THEF 	= "RATM";
 	private static final String RES_PREF_REPORT_THEF 	= "RATO";
 	private static final String RES_PREF_GUARD_LOSS_SET = "RALS";
@@ -119,7 +122,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	private static final int IDX_DVC_NAME 						= 3;
 	private static final int IDX_DVC_ADDR 						= 23;
 	private static final int IDX_DVC_LAST 						= 35;
-	private static final int IDX_PAYLOAD_DATA_OFFS				= 6;
+	private static final int IDX_PAYLOAD_DATA_OFFS				= 5;
 	private static final int MAX_DEVICE_DATA_LEN 				= 36;
 	private static final int  MAX_DEVICE_ADDR_LEN 				= 12;
 
@@ -136,7 +139,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	private ReportModeWakeReceiver _reportModeWakeAlarm = null;
 	private IBluetoothBridge _bluetoothBridge = null;
 	private GuardCyclicTask _cyclicGuardTask = null;
-	private ReportCyclicTask _cyclicReportTask = null;
+	private AntiTheftReportCyclicTask _cyclicAntiTheftReportTask = null;
 	private RegisterCyclicTask _cyclicRegisterTask = null;
 	private ReentrantLock _tStateLock = new ReentrantLock();
 	private Ringtone _alarmSound = null;
@@ -147,6 +150,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	/* REPORT Mode Parameters */
 	private String _guardDeviceAddress = "";
 	private long _lReportWindow = DEFAULT_RW_INTERVAL;
+	private ReportModeInfo _reportInfo = null;
 	/* GUARD Mode Parameters */
 	private long _lSleepInterval = DEFAULT_SLEEP_TIME;
 	private GuardMode _guardMode = GuardMode.BT_CONNECT;
@@ -222,8 +226,8 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 
 	@Override
 	public void onConnected(String name, String address) {
-		if (_cyclicReportTask != null) {
-			_cyclicReportTask.interruptForConnection(name, address);
+		if (_cyclicAntiTheftReportTask != null) {
+			_cyclicAntiTheftReportTask.interruptForConnection(name, address);
 		}
 
 		/* Broadcast our received data for our receivers */
@@ -240,8 +244,8 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 
 	@Override
 	public void onDisconnected(String name, String address) {
-		if (_cyclicReportTask != null) {
-			_cyclicReportTask.interruptForDisconnection();
+		if (_cyclicAntiTheftReportTask != null) {
+			_cyclicAntiTheftReportTask.interruptForDisconnection();
 		}
 
 		if (_cyclicRegisterTask != null) {
@@ -348,9 +352,9 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	}
 
 	private PSStatus startReportMode() {
-		if (_cyclicReportTask == null) {
-			_cyclicReportTask = new ReportCyclicTask();
-			_cyclicReportTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+		if (_cyclicAntiTheftReportTask == null) {
+			_cyclicAntiTheftReportTask = new AntiTheftReportCyclicTask();
+			_cyclicAntiTheftReportTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
 		}
 
 		return PSStatus.OK;
@@ -407,9 +411,9 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		}
 
 		/* Cancel ongoing report tasks */
-		if (_cyclicReportTask != null) {
-			_cyclicReportTask.cancel(true);
-			_cyclicReportTask = null;
+		if (_cyclicAntiTheftReportTask != null) {
+			_cyclicAntiTheftReportTask.cancel(true);
+			_cyclicAntiTheftReportTask = null;
 		}
 
 		/* Cancel ongoing register tasks */
@@ -457,9 +461,9 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		}
 
 		/* Cancel ongoing report tasks */
-		if (_cyclicReportTask != null) {
-			_cyclicReportTask.cancel(true);
-			_cyclicReportTask = null;
+		if (_cyclicAntiTheftReportTask != null) {
+			_cyclicAntiTheftReportTask.cancel(true);
+			_cyclicAntiTheftReportTask = null;
 		}
 
 		/* Cancel ongoing register tasks */
@@ -623,8 +627,6 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		_bluetoothBridge = _app.getBluetoothBridge();
 
 		PSStatus status;
-		//String msg = "DELETE " + address;
-
 		status = performBroadcast(_bluetoothBridge, REQ_PREF_DELETE.getBytes());
 		if (status != PSStatus.OK) {
 			Logger.err("Failed to broadcast DELETE command header");
@@ -635,6 +637,71 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		status = performBroadcast(_bluetoothBridge, request.getBytes());
 		if (status != PSStatus.OK) {
 			Logger.err("Failed to broadcast DELETE command data");
+			return PSStatus.FAILED;
+		}
+
+		return PSStatus.OK;
+	}
+
+	private PSStatus sendModifyGuardListRequest(String guardListMod) {
+		_app = getAppRef();
+		_bluetoothBridge = _app.getBluetoothBridge();
+
+		PSStatus status;
+		status = performBroadcast(_bluetoothBridge, REQ_PREF_GUARD_THEF_SET.getBytes());
+		if (status != PSStatus.OK) {
+			Logger.err("Failed to broadcast MODIFY GUARD LIST command header");
+			return PSStatus.FAILED;
+		}
+
+		String request = guardListMod + ";";
+		status = performBroadcast(_bluetoothBridge, request.getBytes());
+		if (status != PSStatus.OK) {
+			Logger.err("Failed to broadcast MODIFY GUARD LIST command data");
+			return PSStatus.FAILED;
+		}
+
+		return PSStatus.OK;
+	}
+
+
+	private PSStatus sendGuardReadyRequest() {
+		_app = getAppRef();
+		_bluetoothBridge = _app.getBluetoothBridge();
+
+		PSStatus status;
+		status = performBroadcast(_bluetoothBridge, REQ_PREF_GUARD_THEF.getBytes());
+		if (status != PSStatus.OK) {
+			Logger.err("Failed to broadcast GUARD READY command header");
+			return PSStatus.FAILED;
+		}
+
+		String deviceAddr = compressDeviceAddress(_bluetoothBridge.getLocalAddress());
+		String request = deviceAddr + ";";
+		status = performBroadcast(_bluetoothBridge, request.getBytes());
+		if (status != PSStatus.OK) {
+			Logger.err("Failed to broadcast GUARD READY command data");
+			return PSStatus.FAILED;
+		}
+
+		return PSStatus.OK;
+	}
+
+	private PSStatus sendReportRequest(int deviceId) {
+		_app = getAppRef();
+		_bluetoothBridge = _app.getBluetoothBridge();
+
+		PSStatus status;
+		status = performBroadcast(_bluetoothBridge, REQ_PREF_REPORT_THEF.getBytes());
+		if (status != PSStatus.OK) {
+			Logger.err("Failed to broadcast REPORT command header");
+			return PSStatus.FAILED;
+		}
+
+		String request = "110;"; // TODO TEST
+		status = performBroadcast(_bluetoothBridge, request.getBytes());
+		if (status != PSStatus.OK) {
+			Logger.err("Failed to broadcast REPORT command data");
 			return PSStatus.FAILED;
 		}
 
@@ -1076,14 +1143,27 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		for (int iIdx = 0; iIdx < rawListPart.length; iIdx++) {
 			StringReader sr = new StringReader(rawListPart[iIdx]);
 
+			Logger.info("Raw Device String: " + rawListPart[iIdx]);
+
 			try {
 				int iDvcId = sr.read();
+				/* Waste an extra read if our byte is '0' */
+				if (iDvcId == 0) {
+					sr.read();
+				}
+
+				/* If our device id is in ASCII, map it to the actual integer value through subtraction */
 				if (iDvcId >= 49) {
-					/* If our device id is in ASCII, correct it to the actual value
-					 *	through subtraction */
 					iDvcId -= 48;
 				}
+				Logger.info("Device Id: " + iDvcId);
+
 				int iStatus = sr.read();
+				Logger.info("Device Status: " + (iStatus > '0' ? "Guarded" : "Not Guarded"));
+				/* Waste an extra read if our byte is '0' */
+				if (iStatus == '0') {
+					sr.read();
+				}
 
 				char cHexPair[] = new char[2];
 
@@ -1093,10 +1173,11 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				int iCount = 0;
 				while (sr.read(cHexPair, 0, 2) > 0) {
 					/* Check if our Hex Pair is sane */
-					if ((cHexPair[0] < '0') || (cHexPair[0] > '9')) {
+					if ((cHexPair[0] < ' ') || (cHexPair[0] > '~')) {
 						break;
 					}
-					if ((cHexPair[1] < '0') || (cHexPair[1] > '9')) {
+
+					if ((cHexPair[1] < ' ') || (cHexPair[1] > '~')) {
 						break;
 					}
 
@@ -1263,6 +1344,47 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		}
 	}
 
+	private class ReportModeInfo {
+		private int _channel = -1;
+		private long _maxWaitTime = 60000;
+		private long _syncTime = 0;
+
+		public ReportModeInfo(int channel, long waitTime, long syncTime) {
+			_channel = channel;
+			_maxWaitTime = waitTime;
+			_syncTime = syncTime;
+
+			return;
+		}
+
+		public int getChannel() {
+			return _channel;
+		}
+
+		public long getMaxWaitTime() {
+			return _maxWaitTime;
+		}
+
+		public long getSyncTime() {
+			return _syncTime;
+		}
+
+		public void setChannel(int channel) {
+			_channel = channel;
+			return;
+		}
+
+		public void setMaxWaitTime(long time) {
+			_maxWaitTime = time;
+			return;
+		}
+
+		public void setSyncTime(long time) {
+			_syncTime = time;
+			return;
+		}
+	}
+
 	private class MessageHandler extends Handler {
 		@Override
 		public void handleMessage(Message msg) {
@@ -1329,7 +1451,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			case MSG_QUERY_BT_STATE:
 				status = replyBluetoothState(msg.replyTo);
 				break;
-			case MSG_UNREG_DEVICE:
+			case MSG_DELETE_DEVICE:
 				Bundle unregDvcData = msg.getData();
 				if (unregDvcData == null) {
 					break;
@@ -1360,6 +1482,14 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				}
 				boolean bAlarmToggle = alarmToggleData.getBoolean("ALARM", false);
 				status = setAlarmsEnabled(bAlarmToggle);
+				break;
+			case MSG_EDIT_GUARD_LST:
+				Bundle edtGuardData = msg.getData();
+				if (edtGuardData == null) {
+					break;
+				}
+				String edtGuardDataStr = edtGuardData.getString("GUARD_SETUP", "");
+				status = sendModifyGuardListRequest(edtGuardDataStr);
 				break;
 			default:
 				super.handleMessage(msg);
@@ -1437,7 +1567,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			}
 
 			/* Set our task back to NULL */
-			_cyclicReportTask = null;
+			_cyclicRegisterTask = null;
 
 			/* Drop all ongoing connections */
 			stop();
@@ -1503,7 +1633,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		}
 	}
 
-	private class ReportCyclicTask extends AsyncTask<Void, String, Void> {
+	private class AntiTheftReportCyclicTask extends AsyncTask<Void, String, Void> {
 		private Thread 			_runThread = null;
 		private ReentrantLock 	_runThreadLock = new ReentrantLock();
 		private String			_connDeviceName = "";
@@ -1518,26 +1648,50 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 
 			BTState btState;
 
+			setState(ServiceState.AWAIT_GUARD_START);
+			/* Wait for the initial ANTI THEFT MODE START response */
+			if (sendGuardReadyRequest() != PSStatus.OK) {
+				/* Run the cleanup task */
+				cleanupTask(this);
+				return null;
+			}
+
+			while (getState() == ServiceState.AWAIT_GUARD_START) {
+				try {
+					Thread.sleep(DEFAULT_AWAIT_REPORT_CONN_TIME);
+				} catch (InterruptedException e) {
+					Logger.err("Interrupted");
+					/* Interrupts should break the cycle */
+					break;
+				} catch (Exception e) {
+					Logger.err("Exception occurred: " + e.getMessage());
+					break;
+				}
+				break;
+			}
+
+			ServiceState serviceState = getState();
+			if (serviceState != ServiceState.REPORT) {
+				Logger.err("Invalid State: " + serviceState + ". Report task cannot proceed");
+				/* Run the cleanup task */
+				cleanupTask(this);
+				return null;
+			}
+
 			/* Tell all receivers that report mode has started */
 			broadcastAction(ACTION_REP_STARTED);
 			publishProgress("Report Mode has started");
-
-			setState(ServiceState.REPORT);
+			setState(ServiceState.UNKNOWN); // TODO Block execution for now
 
 			while (getState() == ServiceState.REPORT) {
 				/*
 				 * Start listening for connections only if we're not already
 				 * listening, connecting, or connected
 				 */
-				btState = getBluetoothState();
-				if ((btState != BTState.LISTENING)
-						&& (btState != BTState.CONNECTED)
-						&& (btState != BTState.CONNECTING)) {
-					startListen();
-					publishProgress("Waiting for beacon to connect...");
-				}
+				long lStart = System.currentTimeMillis();
 				try {
-					Thread.sleep(DEFAULT_AWAIT_REPORT_CONN_TIME);
+					long lWindow = (_reportInfo.getChannel() * 6000) - 3000;
+					Thread.sleep(System.currentTimeMillis() - _reportInfo.getSyncTime() + lWindow);
 				} catch (InterruptedException e) {
 					Logger.err("Interrupted");
 					/* Handle interrupts due to termination */
@@ -1547,41 +1701,16 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 					/* Normal interruptions should proceed as usual */
 				} catch (Exception e) {
 					Logger.err("Exception occurred: " + e.getMessage());
-					_cyclicRegisterTask = null;
+					_cyclicAntiTheftReportTask = null;
 					break;
 				}
+				Logger.info("Slept for " + Long.toString(System.currentTimeMillis() - lStart) + "ms");
 
-				if (_bIsConnected) {
-					publishProgress("Connected: " + _connDeviceName + "/" + _connDeviceAddr);
-
-					/* Wait for the disconnect signal */
-					try {
-						Thread.sleep(DEFAULT_AWAIT_REPORT_DISCONN_TIME);
-					} catch (InterruptedException e) {
-						/* Allow normal interruptions */
-					}
-
-					/* If still connected, destroy the existing connection ourselves */
-					if (_bIsConnected) {
-						_bluetoothBridge.destroy();
-						_bIsConnected = false;
-					}
-				}
+				sendReportRequest(1);
 			}
 
-			/* Set our task back to NULL */
-			_cyclicRegisterTask = null;
-
-			/* Drop all ongoing connections */
-			stop();
-
-			_runThreadLock.lock();
-			_runThread = null;
-			_runThreadLock.unlock();
-
-			/* Tell all receivers that registration has ended */
-			broadcastAction(ACTION_REP_FINISHED);
-			publishProgress("Report Mode has ended");
+			/* Run the cleanup task */
+			cleanupTask(this);
 
 			return null;
 		}
@@ -1636,6 +1765,24 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			display(values[0]);
 
 			super.onProgressUpdate(values);
+			return;
+		}
+
+		private void cleanupTask(AntiTheftReportCyclicTask task) {
+			/* Set our task back to NULL */
+			_cyclicAntiTheftReportTask = null;
+
+			/* Drop all ongoing connections */
+			stop();
+
+			_runThreadLock.lock();
+			_runThread = null;
+			_runThreadLock.unlock();
+
+			/* Tell all receivers that registration has ended */
+			broadcastAction(ACTION_REP_FINISHED);
+			publishProgress("Report Mode has ended");
+
 			return;
 		}
 	}
@@ -1837,14 +1984,23 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				handleReportRequest(sender, address, data);
 			} else if (prefix.startsWith(REQ_PREF_GET_LIST)) {
 				handleGetListRequest(sender, address, data);
+			} else if (prefix.startsWith(RES_PREF_GET_LIST)) {
+				handleGetListResponse(this, sender, address, data);
+				suppressDisplay = true;
 			} else if (prefix.startsWith(REQ_PREF_DELETE)) {
 				handleDeleteRequest(sender, address, data);
+			} else if (prefix.startsWith(RES_PREF_DELETE)) {
+				handleDeleteResponse(this, sender, address, data);
+				suppressDisplay = true;
 			} else if (prefix.startsWith(REQ_PREF_DISCONNECT)) {
 				handleDisconnectRequest(address);
 			} else if (prefix.startsWith("RWO")) {
 				handleRWOResponse(sender, address, data);
-			} else if (prefix.startsWith(RES_PREF_GET_LIST)) {
-				handleGetListResponse(this, sender, address, data);
+			} else if (prefix.startsWith(RES_PREF_GUARD_THEF_SET)) {
+				handleModifyGuardListResponse(this, sender, address, data);
+				suppressDisplay = true;
+			} else if (prefix.startsWith(RES_PREF_GUARD_THEF)) {
+				handleGuardStartResponse(this, sender, address, data);
 				suppressDisplay = true;
 			} else {
 				Logger.warn("Unknown handling for received data: " + new String(data));
@@ -2079,6 +2235,33 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			return;
 		}
 
+		private void handleDeleteResponse(HandleReceivedDataTask handlerTask,
+											String name, String addr, byte[] data) {
+			if (getState() != ServiceState.SETUP) {
+				Logger.warn("Invalid state for DELETE responses");
+				return;
+			}
+
+			/* Response code is a single-char in the payload, followed by a semi-colon */
+			int iRespCode = data[IDX_PAYLOAD_DATA_OFFS];
+
+			if (iRespCode == RES_CODE_REG_FAIL) {
+				// Delete failed
+				handlerTask.publishProgress("Deletion failed");
+				return;
+			} else if (iRespCode == RES_CODE_REG_OK) {
+				// Registration OK
+				handlerTask.publishProgress("Deleted");
+			} else {
+				Logger.err("Unknown Response: " + new String(data));
+			}
+
+			Intent intent = new Intent(ACTION_DELETED);
+			sendBroadcast(intent);
+
+			return;
+		}
+
 		/* TODO Not updated to current design */
 		private void handleReportRequest(String name, String addr, byte[] data) {
 			if (getState() != ServiceState.GUARD) {
@@ -2130,10 +2313,73 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				// Registration OK
 				handlerTask.publishProgress("Registered");
 			} else {
-				Logger.err("Unknown Response: " + iRespCode);
+				Logger.err("Unknown Response: " + new String(data));
 			}
 
 			setState(ServiceState.SETUP);
+
+			return;
+		}
+
+		private void handleModifyGuardListResponse(HandleReceivedDataTask handlerTask,
+												   String name, String addr, byte[] data) {
+			if (getState() != ServiceState.SETUP) {
+				Logger.warn("Invalid state for MODIFY GUARD LIST responses");
+				return;
+			}
+
+			/* Response code is a single-char in the payload, followed by a semi-colon */
+			int iRespCode = data[IDX_PAYLOAD_DATA_OFFS];
+
+			if (iRespCode == RES_CODE_REG_FAIL) {
+				// Registration failed
+				handlerTask.publishProgress("Guard List Modification failed");
+				return;
+			} else if (iRespCode == RES_CODE_REG_OK) {
+				// Registration OK
+				handlerTask.publishProgress("Guard List Modified");
+			} else {
+				Logger.err("Unknown Response: " + new String(data));
+			}
+
+			Intent intent = new Intent(ACTION_LIST_CHANGED);
+			sendBroadcast(intent);
+
+			return;
+		}
+
+		private void handleGuardStartResponse(HandleReceivedDataTask handlerTask,
+											  String name, String addr, byte[] data) {
+			if (getState() != ServiceState.AWAIT_GUARD_START) {
+				Logger.warn("Invalid state for GUARD START responses");
+				return;
+			}
+
+			int iBytesToRead = data.length - IDX_PAYLOAD_DATA_OFFS;
+			if (iBytesToRead < 0) {
+				Logger.err("Invalid GUARD START response: " + new String(data));
+				return;
+			}
+			Logger.info("Bytes to read: " + iBytesToRead);
+
+			String dataStr = new String(data, 4, iBytesToRead).replace(";", "");
+			String dataPart[] = dataStr.split(",");
+
+			try {
+				int iChannel = Integer.parseInt(dataPart[0]);
+				long lMaxTime = (Long.parseLong(dataPart[1]) * 1000);
+				long lSyncTime = (Long.parseLong(dataPart[2]) * 1000) + System.currentTimeMillis();
+
+				_reportInfo = new ReportModeInfo(iChannel, lMaxTime, lSyncTime);
+
+				setState(ServiceState.REPORT);
+
+				if (_cyclicAntiTheftReportTask != null) {
+					_cyclicAntiTheftReportTask.interrupt();
+				}
+			} catch (Exception e) {
+				Logger.err("Exception occurred: " + e.getMessage());
+			}
 
 			return;
 		}
@@ -2167,7 +2413,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		private void handleGetListResponse(HandleReceivedDataTask handlerTask,
 										   String name, String addr, byte[] data) {
 			/* Handle the GET LIST response */
-			String dvcListStr = decodeBinaryDeviceList(data, IDX_PAYLOAD_DATA_OFFS);
+			String dvcListStr = decodeBinaryDeviceList(data, IDX_PAYLOAD_DATA_OFFS+1);
 			String devices[] = dvcListStr.split(",");
 
 			handlerTask.publishProgress("Device list received");

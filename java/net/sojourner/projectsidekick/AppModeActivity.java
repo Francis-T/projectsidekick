@@ -99,7 +99,7 @@ public class AppModeActivity extends ServiceBindingListActivity {
 				}
 		);
 
-		/* Restore the old registered device list and show it in our current list*/
+		/* Restore the old registered device list and show it in our current list */
 		if (_app == null) {
 			_app = (ProjectSidekickApp) getApplication();
 		}

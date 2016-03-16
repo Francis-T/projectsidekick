@@ -866,7 +866,6 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 
 			try {
 				_incomingData.write(characteristic.getValue());
-
 				String dataPartStr = characteristic.getStringValue(0);
 				if (dataPartStr.contains(";")) {
 					/* Retrieve the byte array */

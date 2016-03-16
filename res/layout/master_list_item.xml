@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_marginLeft="10dp"
+    android:layout_marginRight="10dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:text="Medium Text"
+        android:id="@+id/txv_dvc_name"
+        android:layout_alignParentTop="true"
+        android:layout_toRightOf="@+id/img_guard_status"
+        android:layout_toEndOf="@+id/img_guard_status"
+        android:layout_marginBottom="2dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="New Text"
+        android:id="@+id/txv_dvc_addr"
+        android:layout_below="@+id/txv_dvc_name"
+        android:layout_toRightOf="@+id/img_guard_status"
+        android:layout_toEndOf="@+id/img_guard_status" />
+
+    <ImageButton
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/img_guard_status"
+        android:src="@android:drawable/ic_menu_mylocation"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentStart="true"
+        android:layout_alignBottom="@+id/txv_dvc_addr"
+        android:layout_marginLeft="5dp"
+        android:layout_marginRight="10dp"
+        android:background="#04000000"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:scaleType="centerInside" />
+
+    <ImageButton
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/btn_delete"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentEnd="true"
+        android:layout_alignBottom="@+id/txv_dvc_addr"
+        android:src="@android:drawable/ic_menu_delete" />
+
+</RelativeLayout>

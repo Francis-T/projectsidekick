@@ -4,11 +4,17 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     tools:context="${relativePackage}.${activityClass}" >
-
     <ListView
         android:id="@android:id/list"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" >
+        android:layout_height="wrap_content"
+        android:layout_weight="1">
     </ListView>
-    
+    <ImageButton
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:id="@+id/btn_save"
+        android:layout_gravity="center_horizontal"
+        android:src="@android:drawable/ic_menu_save" />
+
 </LinearLayout>

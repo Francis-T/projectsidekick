@@ -69,23 +69,23 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 
         final Button btnConnect = (Button) findViewById(R.id.btn_connect);
         btnConnect.setOnClickListener(
-            new View.OnClickListener() {
-				@Override
-				public void onClick(View v) {
-					if (_isConnected) {
-						disconnectDevice();
-						//updateGuiToDisconnected();
-						_isConnected = false;
+				new View.OnClickListener() {
+					@Override
+					public void onClick(View v) {
+						if (_isConnected) {
+							disconnectDevice();
+							//updateGuiToDisconnected();
+							_isConnected = false;
+							return;
+						}
+
+						if (connectToDevice() != PSStatus.OK) {
+							display("Connection Failed!");
+						}
 						return;
 					}
-
-					if (connectToDevice() != PSStatus.OK) {
-                        display("Connection Failed!");
-                    }
-                    return;
 				}
-            }
-        );
+		);
 
         final Button btnRename = (Button) findViewById(R.id.btn_rename);
         btnRename.setOnClickListener(
@@ -147,9 +147,21 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 					public void onClick(View v) {
 						requestGuardList();
 					
-                    /* Present a progress bar while we wait for the 
-                     *  list to be retrieved */
-					/* TODO */
+						/* Present a progress bar while we wait for the
+						 *  list to be retrieved */
+						/* TODO */
+
+						return;
+					}
+				}
+		);
+
+		final Button btnReqStartGuard = (Button) findViewById(R.id.btn_req_guard_start);
+		btnReqStartGuard.setOnClickListener(
+				new View.OnClickListener() {
+					@Override
+					public void onClick(View v) {
+						requestGuardStart();
 
 						return;
 					}
@@ -306,6 +318,27 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
     	return PSStatus.OK;
     }
 
+
+	private PSStatus requestGuardStart() {
+		if (!_isConnected) {
+			display("Not yet connected!");
+			return PSStatus.FAILED;
+		}
+
+		PSStatus PSStatus;
+
+		Bundle extras = new Bundle();
+		extras.putString("DEVICE_ADDR", _deviceAddr);
+		PSStatus = callService(ProjectSidekickService.MSG_START_REPORT, extras, null);
+		if (PSStatus != PSStatus.OK) {
+			display("Failed to send Start Guard request");
+			return PSStatus.FAILED;
+		}
+		display("Start Guard request sent");
+
+		return PSStatus.OK;
+	}
+
     private PSStatus disconnectDevice() {
 		PSStatus PSStatus;
 		PSStatus = callService(ProjectSidekickService.MSG_DISCONNECT);
@@ -339,6 +372,10 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
             (Button) findViewById(R.id.btn_req_guard_list);
         btnReqGuardList.setEnabled(true);
 
+		Button btnReqStartGuard =
+				(Button) findViewById(R.id.btn_req_guard_start);
+		btnReqStartGuard.setEnabled(true);
+
         return;
     }
 
@@ -362,6 +399,10 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
         Button btnReqGuardList =
             (Button) findViewById(R.id.btn_req_guard_list);
         btnReqGuardList.setEnabled(false);
+
+		Button btnReqStartGuard =
+				(Button) findViewById(R.id.btn_req_guard_start);
+		btnReqStartGuard.setEnabled(false);
 
         return;
     }
@@ -544,6 +585,7 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 	        	Intent listIntent
 	        		= new Intent(AppModeConfigBeaconActivity.this,
 	        				AppModeBeaconMasterListActivity.class);
+				listIntent.putExtra("DEVICE_ADDR", _deviceAddr);
 	        	listIntent.putExtra("DEVICES", intent.getStringArrayExtra("DEVICES"));
 	        	startActivity(listIntent);
 	        }

@@ -76,11 +76,24 @@
         android:enabled="false"
         android:text="List Discovered Devices" /-->
 
-    <Button
-        android:id="@+id/btn_req_guard_list"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:enabled="false"
-        android:text="List Guarded Devices" />
+        android:orientation="horizontal">
+        <Button
+            android:id="@+id/btn_req_guard_list"
+            android:layout_weight="1"
+            android:layout_width="0dip"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="List Devices" />
+        <Button
+            android:id="@+id/btn_req_guard_start"
+            android:layout_weight="1"
+            android:layout_width="0dip"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="Guard" />
+    </LinearLayout>
 
 </LinearLayout>

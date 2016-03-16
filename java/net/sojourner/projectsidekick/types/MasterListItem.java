@@ -10,6 +10,7 @@ public class MasterListItem {
     private String 	_name = "";
     private String 	_addr = "";
     private boolean _bIsGuarded = false;
+    private boolean _bIsModified = false;
     private static String _delim = "\\|";
 
     /**
@@ -72,11 +73,25 @@ public class MasterListItem {
     }
 
     public String getName() {
-        return _name;
+        return  _name;
+    }
+
+    public boolean isModified() {
+        return _bIsModified;
+    }
+
+    public void setModifiedStatus(boolean isModified) {
+        _bIsModified = isModified;
+        return;
     }
 
     public boolean isGuarded() {
         return _bIsGuarded;
+    }
+
+    public void setGuardStatus(boolean isGuarded) {
+        _bIsGuarded = isGuarded;
+        return;
     }
 
     private String getGuardStatus() {
