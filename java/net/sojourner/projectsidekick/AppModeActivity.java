@@ -10,16 +10,22 @@ import net.sojourner.projectsidekick.types.PSStatus;
 import net.sojourner.projectsidekick.types.ServiceBindingListActivity;
 import net.sojourner.projectsidekick.types.ServiceState;
 import net.sojourner.projectsidekick.utils.Logger;
+
+import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -198,6 +204,29 @@ public class AppModeActivity extends ServiceBindingListActivity {
 		
 		return;
 	}
+
+	@Override
+	public boolean onCreateOptionsMenu(Menu menu) {
+		MenuInflater inflater = getMenuInflater();
+		inflater.inflate(R.menu.menu_config, menu);
+		return true;
+	}
+
+	@Override
+	public boolean onOptionsItemSelected(MenuItem item) {
+		switch (item.getItemId()) {
+			case R.id.m_item_set_check_mode:
+				return false;
+			case R.id.m_item_set_check_interval:
+				return false;
+			case R.id.m_item_set_alarm_toggle:
+				showSetAlarmToggleDialog();
+				return true;
+			default:
+				break;
+		}
+		return super.onOptionsItemSelected(item);
+	}
 	
 	/* *************** */
 	/* Private Methods */
@@ -337,6 +366,42 @@ public class AppModeActivity extends ServiceBindingListActivity {
 		}
 
 		return PSStatus.OK;
+	}
+
+	private void showSetAlarmToggleDialog() {
+		if (_app == null) {
+			_app = (ProjectSidekickApp) getApplication();
+		}
+
+		AlertDialog.Builder dlgBuilder = new AlertDialog.Builder(this);
+
+		dlgBuilder.setTitle("Toggle sound alarm");
+		dlgBuilder.setMessage("Do you wish to enable sound alarms for this device?")
+				.setCancelable(false)
+				.setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+					@Override
+					public void onClick(DialogInterface dialog, int which) {
+						Bundle data = new Bundle();
+						data.putBoolean("ALARM", true);
+						callService(ProjectSidekickService.MSG_SET_ALARM_TOGGLE, data, null);
+						display("Alarms Enabled!");
+						return;
+					}
+				})
+				.setNegativeButton("No", new DialogInterface.OnClickListener() {
+					@Override
+					public void onClick(DialogInterface dialog, int which) {
+						Bundle data = new Bundle();
+						data.putBoolean("ALARM", false);
+						callService(ProjectSidekickService.MSG_SET_ALARM_TOGGLE, data, null);
+						display("Alarms Disabled!");
+						return;
+					}
+				});
+
+		dlgBuilder.create().show();
+
+		return;
 	}
 
 	/* ********************* */

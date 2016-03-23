@@ -19,8 +19,6 @@ import net.sojourner.projectsidekick.types.BTState;
 import net.sojourner.projectsidekick.types.PSStatus;
 import net.sojourner.projectsidekick.utils.Logger;
 
-import org.apache.http.MethodNotSupportedException;
-
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -120,7 +118,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 		
 		/* Treat the initObject as the _context */
 		_context = (Context) initObject;
-		if ( _bluetoothAdapter.isEnabled() == false ) {
+		if (!_bluetoothAdapter.isEnabled()) {
 			Logger.err("Bluetooth is not enabled");
 			return PSStatus.FAILED;
 		}
@@ -212,7 +210,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 			return PSStatus.FAILED;
 		}
 		
-		if ( BluetoothAdapter.checkBluetoothAddress(address) == false ) {
+		if (!BluetoothAdapter.checkBluetoothAddress(address)) {
 			Logger.err("Invalid bluetooth hardware address: " + address);
 			return PSStatus.FAILED;
 		}
@@ -222,8 +220,8 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 			Logger.err("Invalid Bluetooth device address");
 			return PSStatus.FAILED;
 		}
-		BluetoothLeConnection bleConn = null;
-		if (_currentConnections.containsKey(address) == true) {
+		BluetoothLeConnection bleConn;
+		if (_currentConnections.containsKey(address)) {
 			if (_currentConnections.get(address).isConnected()) {
 				Logger.err("Already connected");
 				return PSStatus.OK;
@@ -306,7 +304,10 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 	@Override
 	public PSStatus disconnectDeviceByAddress(String address) {
 		if (!_currentConnections.containsKey(address)) {
-			return PSStatus.FAILED;
+			if (getState() != BTState.DISCONNECTED) {
+				setState(BTState.DISCONNECTED);
+			}
+			return PSStatus.OK;
 		}
 
 		BluetoothLeConnection bleConn = _currentConnections.get(address);
@@ -539,21 +540,21 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 	private void clearDeviceLists() {
 		
 		if (_pairedDevices != null) {
-			if (_pairedDevices.isEmpty() == false) {
+			if (!_pairedDevices.isEmpty()) {
 				_pairedDevices.clear();
 			}
 			_pairedDevices = null;
 		}
 		
 		if (_discoveredDevices != null) {
-			if (_discoveredDevices.isEmpty() == false) {
+			if (!_discoveredDevices.isEmpty()) {
 				_discoveredDevices.clear();
 			}
 			_discoveredDevices = null;
 		}
 		
 		if (_currentConnections != null) {
-			if (_currentConnections.isEmpty() == false) {
+			if (!_currentConnections.isEmpty()) {
 				_currentConnections.clear();
 			}
 			_currentConnections = null;
@@ -575,30 +576,6 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 		Logger.info("Bluetooth Bridge State is now " + _state.toString());
 		return;
 	}
-
-	private static String getReversedMacAddress(String address) {
-		String newAddr = "";
-
-		int targIdx = 0;
-		int offset = 2;
-
-		targIdx = address.length() - offset;
-		while (targIdx >= 0) {
-
-			newAddr += address.charAt(targIdx++);
-			newAddr += address.charAt(targIdx);
-
-			offset += 3;
-			targIdx = address.length() - offset;
-
-			if (targIdx >= 0) {
-				newAddr += ":";
-			}
-		}
-
-		return newAddr;
-	}
-
 
 	private void notifyOnConnected(String name, String address) {
 		setState(BTState.CONNECTED);
@@ -676,6 +653,19 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 
 		public BluetoothGattCharacteristic getCharacteristic() {
 			return _characteristic;
+		}
+
+		public String getCharacteristicName() {
+			UUID uuid = _characteristic.getUuid();
+			if (uuid.equals(UUID_COMMAND)) {
+				return "COMMAND";
+			} else if (uuid.equals(UUID_MODEL_NUM)) {
+				return "MODEL NO";
+			} else if (uuid.equals(UUID_SERIAL)) {
+				return "SERIAL";
+			}
+
+			return "UNKNOWN";
 		}
 
 		public byte[] getData() {
@@ -824,6 +814,8 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 				/* Retrieve the write request and reconstruct the characteristic */
 				BluetoothGattRequest request = _gattTaskQueue.get(0);
 				BluetoothGattCharacteristic characteristic = request.getCharacteristic();
+				Logger.info("Processing request: " + request.getCharacteristicName() +
+						", isWrite=" + request.isWrite());
 				if (request.isWrite()) {
 					byte data[] = request.getData();
 					characteristic.setValue(data);
@@ -866,8 +858,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 
 			try {
 				_incomingData.write(characteristic.getValue());
-				String dataPartStr = characteristic.getStringValue(0);
-				if (dataPartStr.contains(";")) {
+				if (hasTerminatingChar(characteristic.getValue())) {
 					/* Retrieve the byte array */
 					_dataBuffer = _incomingData.toByteArray();
 
@@ -887,6 +878,16 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 			return true;
 		}
 
+		private boolean hasTerminatingChar(byte[] dataArr) {
+			for (byte b : dataArr) {
+				if (b == ';') {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		private class BluetoothGattCallbackHandler extends BluetoothGattCallback {
 			@Override
 			public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
@@ -898,13 +899,30 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 						Logger.err("Could not discover services for connection");
 					}
 
-					notifyOnConnected(gatt.getDevice().getName(), gatt.getDevice().getAddress());
+					if (gatt.getDevice() == null) {
+						Logger.warn("Received NULL BluetoothDevice reference");
+						notifyOnConnected(getDeviceName(), getDeviceAddress());
+					} else {
+						notifyOnConnected(gatt.getDevice().getName(), gatt.getDevice().getAddress());
+					}
 				} else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-					/* TODO DO SOMETHING ELSE */
 					_isConnected = false;
 					_gattTaskQueue.clear();
-					notifyOnDisconnected(gatt.getDevice().getName(), gatt.getDevice().getAddress());
+
+					/* Unset our previously known characteristics */
+					_modelNumCharacteristic = null;
+					_serialPortCharacteristic = null;
+					_commandCharacteristic = null;
+
+					if (gatt.getDevice() == null) {
+						Logger.warn("Received NULL BluetoothDevice reference");
+						notifyOnDisconnected("", "");
+					} else {
+						notifyOnDisconnected(gatt.getDevice().getName(), gatt.getDevice().getAddress());
+					}
 				}
+
+				Logger.dbg("Bluetooth LE Conn State Changed: " + newState);
 
 				/* Interrupt any waiting threads */
 				if (_waitingThread != null) {
@@ -966,8 +984,9 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 				_gattCharacteristics.clear();
 
 				/* Upon successful discovery of services, check and cache the ones we can use */
+				UUID uuid;
 				for (BluetoothGattService gattService : gatt.getServices()) {
-					UUID uuid = gattService.getUuid();
+					//uuid = gattService.getUuid();
 					/* Loop through the service's characteristics */
 					for (BluetoothGattCharacteristic gattChar : gattService.getCharacteristics()) {
 						uuid = gattChar.getUuid();
@@ -994,9 +1013,14 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 
 				Logger.info("Get characteristics done");
 
-				/* Read the model number off our Bluno device TODO ? */
+				/* Read the model number off our Bluno device */
 				_targetCharacteristic = _modelNumCharacteristic;
 				gatt.setCharacteristicNotification(_targetCharacteristic, true);
+				try {
+					Thread.sleep(500);
+				} catch (InterruptedException e) {
+					Logger.warn("Read delay interrupted");
+				}
 				read(_targetCharacteristic);
 				nudgeQueue();
 

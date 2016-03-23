@@ -15,6 +15,9 @@ import android.content.IntentFilter;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -341,9 +344,9 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 
     private PSStatus disconnectDevice() {
 		PSStatus PSStatus;
-		PSStatus = callService(ProjectSidekickService.MSG_DISCONNECT);
+		PSStatus = callService(ProjectSidekickService.MSG_STOP);
 		if (PSStatus != PSStatus.OK) {
-			display("Failed to disconnectdevice");
+			display("Failed to disconnect device");
 			return PSStatus.FAILED;
 		}
 		display("Device has been disconnected");
