@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+
+    <ImageButton
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:id="@+id/btn_sidekick_reg"
+        android:layout_marginLeft="5dp"
+        android:layout_marginRight="10dp"
+        android:padding="2dp"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentStart="true"
+        android:scaleType="fitCenter"
+        android:background="#04000000"
+        android:src="@drawable/ic_unregistered" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:text="Large Text"
+        android:id="@+id/txv_sidekick_name"
+        android:layout_alignParentTop="true"
+        android:layout_toRightOf="@+id/btn_sidekick_reg"
+        android:layout_toEndOf="@+id/btn_sidekick_reg" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceSmall"
+        android:text="Medium Text"
+        android:id="@+id/txv_sidekick_addr"
+        android:layout_below="@+id/txv_sidekick_name"
+        android:layout_toRightOf="@+id/btn_sidekick_reg"
+        android:layout_toEndOf="@+id/btn_sidekick_reg" />
+
+    <ImageView
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:id="@+id/img_sidekick_found"
+        android:padding="2dp"
+        android:src="@drawable/ic_not_found"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentEnd="true" />
+</RelativeLayout>

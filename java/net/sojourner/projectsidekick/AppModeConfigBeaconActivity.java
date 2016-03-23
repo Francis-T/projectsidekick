@@ -7,6 +7,7 @@ import net.sojourner.projectsidekick.types.ServiceState;
 import net.sojourner.projectsidekick.types.PSStatus;
 import net.sojourner.projectsidekick.utils.Logger;
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -15,9 +16,6 @@ import android.content.IntentFilter;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -32,6 +30,8 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
     private String 				_deviceName 		= "";
     private String 				_deviceAddr 		= "";
     private boolean 			_isConnected 		= false;
+
+	private ProgressDialog 		_progress			= null;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -70,6 +70,10 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 		/* Setup our GUI */
 		guiReloadDeviceInfo();
 
+		_progress = new ProgressDialog(this);
+		_progress.setIndeterminate(true);
+		_progress.setProgressStyle(ProgressDialog.STYLE_SPINNER);
+
         final Button btnConnect = (Button) findViewById(R.id.btn_connect);
         btnConnect.setOnClickListener(
 				new View.OnClickListener() {
@@ -79,12 +83,16 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 							disconnectDevice();
 							//updateGuiToDisconnected();
 							_isConnected = false;
-							return;
+							_progress.setMessage("Disconnecting...");
+						} else {
+							if (connectToDevice() != PSStatus.OK) {
+								display("Connection Failed!");
+							}
+							_progress.setMessage("Connecting...");
 						}
 
-						if (connectToDevice() != PSStatus.OK) {
-							display("Connection Failed!");
-						}
+						_progress.setProgress(0);
+						_progress.show();
 						return;
 					}
 				}
@@ -105,11 +113,6 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 				}
             }
         );
-		if (_app.findRegisteredDevice(_deviceAddr) != null) {
-			btnRename.setEnabled(true);
-		} else {
-			btnRename.setEnabled(false);
-		}
 
         final Button btnRegister = (Button) findViewById(R.id.btn_register);
         btnRegister.setOnClickListener(
@@ -121,6 +124,10 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 					}
 
 					btnRename.setEnabled(true);
+					/* Present a progress bar */
+					_progress.setMessage("Registering Device...");
+					_progress.setProgress(0);
+					_progress.show();
 
 					return;
 				}
@@ -149,11 +156,11 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 					@Override
 					public void onClick(View v) {
 						requestGuardList();
-					
 						/* Present a progress bar while we wait for the
 						 *  list to be retrieved */
-						/* TODO */
-
+						_progress.setMessage("Obtaining Device List...");
+						_progress.setProgress(0);
+						_progress.show();
 						return;
 					}
 				}
@@ -165,6 +172,10 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 					@Override
 					public void onClick(View v) {
 						requestGuardStart();
+						/* Present a progress bar */
+						_progress.setMessage("Starting Sidekick Anti-theft Mode...");
+						_progress.setProgress(0);
+						_progress.show();
 
 						return;
 					}
@@ -191,6 +202,10 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 			filter.addAction(ProjectSidekickService.ACTION_DATA_RECEIVE);
 			filter.addAction(ProjectSidekickService.ACTION_DISCONNECTED);
 			filter.addAction(ProjectSidekickService.ACTION_LIST_RECEIVED);
+			filter.addAction(ProjectSidekickService.ACTION_REGISTERED);
+			filter.addAction(ProjectSidekickService.ACTION_UNREGISTERED);
+			filter.addAction(ProjectSidekickService.ACTION_REP_STARTED);
+			filter.addAction(ProjectSidekickService.ACTION_REP_FINISHED);
 			registerReceiver(_receiver, filter);
 		}
 
@@ -254,12 +269,6 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 
     private PSStatus connectToDevice() {
 		PSStatus PSStatus;
-		PSStatus = callService(ProjectSidekickService.MSG_SET_AS_MOBILE);
-		if (PSStatus != PSStatus.OK) {
-			display("Failed set role to MOBILE");
-			return PSStatus.FAILED;
-		}
-
 		PSStatus = callService(ProjectSidekickService.MSG_START_SETUP);
 		if (PSStatus != PSStatus.OK) {
 			display("Failed start SETUP Mode");
@@ -342,6 +351,26 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 		return PSStatus.OK;
 	}
 
+	private PSStatus requestRename(String newName) {
+		if (!_isConnected) {
+			display("Not yet connected!");
+			return PSStatus.FAILED;
+		}
+
+		PSStatus PSStatus;
+
+		Bundle extras = new Bundle();
+		extras.putString("DEVICE_NAME", newName);
+		PSStatus = callService(ProjectSidekickService.MSG_RENAME_SIDEKICK, extras, null);
+		if (PSStatus != PSStatus.OK) {
+			display("Failed to send Rename request");
+			return PSStatus.FAILED;
+		}
+		display("Rename request sent");
+
+		return PSStatus.OK;
+	}
+
     private PSStatus disconnectDevice() {
 		PSStatus PSStatus;
 		PSStatus = callService(ProjectSidekickService.MSG_STOP);
@@ -379,6 +408,10 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 				(Button) findViewById(R.id.btn_req_guard_start);
 		btnReqStartGuard.setEnabled(true);
 
+		if (_progress.isShowing()) {
+			_progress.hide();
+		}
+
         return;
     }
 
@@ -407,6 +440,9 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 				(Button) findViewById(R.id.btn_req_guard_start);
 		btnReqStartGuard.setEnabled(false);
 
+		if (_progress.isShowing()) {
+			_progress.hide();
+		}
         return;
     }
 
@@ -432,18 +468,25 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 				@Override
 				public void onClick(DialogInterface dialog, int which) {
 					String nameStr = nameInput.getText().toString();
-
-					fkd.setName(nameStr);
+					requestRename(nameStr);
 
 					_app = getAppRef();
-					if (_app.updateRegisteredDevice(fkd) != PSStatus.OK) {
+					if (_app.removeRegisteredDevice(fkd.getAddress())!= PSStatus.OK) {
 						Logger.err("Device not registered. Renaming is meaningless.");
 					}
+					finish();
 
-					_deviceName = nameStr;
-					guiReloadDeviceInfo();
-
-					display("Renamed!");
+//					fkd.setName(nameStr);
+//
+//					_app = getAppRef();
+//					if (_app.updateRegisteredDevice(fkd) != PSStatus.OK) {
+//						Logger.err("Device not registered. Renaming is meaningless.");
+//					}
+//
+//					_deviceName = nameStr;
+//					guiReloadDeviceInfo();
+//
+//					display("Renamed!");
 					return;
 				}
 			})
@@ -585,13 +628,30 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 	        	String msg = intent.getStringExtra("SENDER_DATA");
 	        	display(msg);
 	        } else if (ProjectSidekickService.ACTION_LIST_RECEIVED.equals(action)) {
+				_progress.hide();
 	        	Intent listIntent
 	        		= new Intent(AppModeConfigBeaconActivity.this,
 	        				AppModeBeaconMasterListActivity.class);
 				listIntent.putExtra("DEVICE_ADDR", _deviceAddr);
-	        	listIntent.putExtra("DEVICES", intent.getStringArrayExtra("DEVICES"));
+				listIntent.putExtra("DEVICES", intent.getStringArrayExtra("DEVICES"));
 	        	startActivity(listIntent);
-	        }
+	        } else if (ProjectSidekickService.ACTION_REGISTERED.equals(action)) {
+				if (_progress.isShowing()) {
+					_progress.hide();
+				}
+			} else if (ProjectSidekickService.ACTION_DATA_RECEIVE.equals(action)) {
+				if (_progress.isShowing()) {
+					_progress.hide();
+				}
+			} else if (ProjectSidekickService.ACTION_REP_STARTED.equals(action)) {
+				if (_progress.isShowing()) {
+					_progress.hide();
+				}
+			} else if (ProjectSidekickService.ACTION_REP_FINISHED.equals(action)) {
+				if (_progress.isShowing()) {
+					_progress.hide();
+				}
+			}
 	    }
 	};
 }

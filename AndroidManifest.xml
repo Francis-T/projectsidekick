@@ -18,17 +18,13 @@
         android:theme="@style/AppTheme"
         android:name=".ProjectSidekickApp" >
         <activity
-            android:name=".MainActivity"
+            android:name=".AppModeActivity"
             android:label="@string/app_name" >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
-        <activity 
-            android:name=".AppModeActivity"
-            android:label="@string/title_app_mode">
         </activity>
         <activity 
             android:name=".AppModeConfigBeaconActivity"
@@ -38,10 +34,7 @@
             android:name=".AppModeBeaconMasterListActivity"
             android:label="@string/title_app_mode_beacon_master_list">
         </activity>
-        <activity 
-            android:name=".BeaconModeActivity"
-            android:label="@string/title_beacon_mode">
-        </activity>
+
         <receiver android:name=".ReportModeWakeReceiver"></receiver>
         <service android:name=".ProjectSidekickService"
                  android:process=".ProjectSidekickService"

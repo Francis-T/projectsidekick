@@ -34,9 +34,9 @@
         android:layout_alignParentLeft="true"
         android:layout_alignParentStart="true"
         android:layout_alignBottom="@+id/txv_dvc_addr"
+        android:background="#04000000"
         android:layout_marginLeft="5dp"
         android:layout_marginRight="10dp"
-        android:background="#04000000"
         android:paddingLeft="10dp"
         android:paddingRight="10dp"
         android:scaleType="centerInside" />

@@ -340,9 +340,16 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 			Logger.err("Current connections list is empty");
 			return PSStatus.FAILED;
 		}
-		
+
+		boolean bWriteFailed = false;
 		for (Map.Entry<String, BluetoothLeConnection> conn : _currentConnections.entrySet()) {
-			conn.getValue().write(data);
+			if (!conn.getValue().write(data)) {
+				bWriteFailed = true;
+			}
+		}
+
+		if (bWriteFailed) {
+			return PSStatus.FAILED;
 		}
 		
 		return PSStatus.OK;
@@ -682,6 +689,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 		private boolean _isConnected = false;
 		private ByteArrayOutputStream _incomingData = null;
 		private byte[] _dataBuffer = null;
+		boolean _bInternalQueueFailed = false;
 
 		private List<BluetoothGattCharacteristic> _gattCharacteristics = new ArrayList<BluetoothGattCharacteristic>();
 		private BluetoothGattCharacteristic _modelNumCharacteristic = null;
@@ -755,6 +763,12 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 
 			if (_bluetoothGatt == null) {
 				Logger.err("No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
+				return false;
+			}
+
+			if (_bInternalQueueFailed) {
+				Logger.err("Internal queue failed on previous attempts");
+				_bInternalQueueFailed = false;
 				return false;
 			}
 
