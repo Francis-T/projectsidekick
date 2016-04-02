@@ -12,7 +12,7 @@ public class SKUtils {
     public static final long DEFAULT_RW_INTERVAL    = 6000;
     public static final int  MAX_DEVICE_NAME_LEN 	= 20;
     public static final int MAX_TX_LEN              = 20;
-    public static final int IDX_PAYLOAD_DATA_OFFS   = 5;
+    public static final int IDX_PAYLOAD_DATA_OFFS   = 4;
 
     private static final long DEFAULT_RW_INTERVAL_OFFS  = 6000;
     private static final long DEFAULT_SLEEP_TIME 		= 15000;

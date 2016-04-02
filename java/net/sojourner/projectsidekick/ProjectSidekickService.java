@@ -554,7 +554,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		return PSStatus.OK;
 	}
 
-	private PSStatus sendReportRequest(int deviceId) {
+	private PSStatus sendReportRequest(int deviceId, String guardStatus, String alarmStatus) {
 		_app = getAppRef();
 		_bluetoothBridge = _app.getBluetoothBridge();
 
@@ -566,10 +566,8 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 		}
 
 		String deviceIdStr = String.valueOf(deviceId);
-		String guardStatStr = "1";
-		String alarmStatStr = "0";
 
-		String request =  deviceIdStr + guardStatStr + alarmStatStr + RXX_TERM;
+		String request =  deviceIdStr + guardStatus + alarmStatus + RXX_TERM;
 		status = performBroadcast(_bluetoothBridge, request.getBytes());
 		if (status != PSStatus.OK) {
 			Logger.err("Failed to broadcast REPORT command data");
@@ -860,6 +858,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 	private class AntiTheftReportCyclicTask extends AsyncTask<Void, String, Void> {
 		private Thread 			_runThread = null;
 		private ReentrantLock 	_runThreadLock = new ReentrantLock();
+		private boolean 		_bIsCycleRunning = false;
 
 		private String _sidekickAddress = null;
 
@@ -932,6 +931,17 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			return;
 		}
 
+		public void interruptForCycleFinished() {
+			_bIsCycleRunning = false;
+			_runThreadLock.lock();
+			if (_runThread != null) {
+				_runThread.interrupt();
+			}
+			_runThreadLock.unlock();
+			Logger.info("Cycle finished");
+			return;
+		}
+
 		public void interrupt() {
 			_runThreadLock.lock();
 			if (_runThread != null) {
@@ -989,8 +999,10 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			int iChannel = 0;
 			long lSyncTime = 0;
 
+			_bIsCycleRunning = true;
+
 			/* Loop continuously while we are still in REPORT state */
-			while (getState() == ServiceState.REPORT) {
+			while ((getState() == ServiceState.REPORT) && (_bIsCycleRunning)) {
 				if (_bIsLost) {
 					/* If this device has been lost, then we should attempt to re-sync
 					 * 	every few seconds (DEFAULT_RW_INTERVAL) */
@@ -1007,15 +1019,18 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				/* Sleep until our next cycle */
 				status = sleepUntilNextCycle(System.currentTimeMillis(), lSyncTime);
 				if (status != PSStatus.OK) {
-					return status;
+					break;
 				}
 
 				/* Re-connect to the sidekick device if needed */
 				if (getBluetoothState() != BTState.CONNECTED) {
+					publishProgress("Attempting to reconnect to sidekick...");
 					status = connectToSidekick();
 					if (status == PSStatus.FAILED) {
 						notifyConnectionLost();
 						continue;
+					} else if (status == PSStatus.INTERRUPTED) {
+						break;
 					}
 				}
 
@@ -1028,8 +1043,10 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 						notifyConnectionRegained();
 					}
 					continue;
-				} else if (status == PSStatus.FATAL_ERROR) {
-					return status;
+				} else if (status == PSStatus.FAILED) {
+					/* DO NOTHING */
+				} else {
+					break;
 				}
 
 //				/* Disconnect from the sidekick device if we have to */
@@ -1044,6 +1061,12 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				notifyConnectionLost();
 			}
 
+			if (!_bIsCycleRunning) {
+				stopSidekickReporting(iChannel);
+			}
+
+			_bIsCycleRunning = false;
+
 			return PSStatus.OK;
 		}
 
@@ -1055,12 +1078,12 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 					Thread.sleep(lSyncTime - lStartTime);
 				}
 			} catch (InterruptedException e) {
-				Logger.warn("Interrupted");
-					/* Handle interrupts due to termination */
+				Logger.warn("Interrupted sleepUntilNextCycle()");
+				/* Handle interrupts due to termination */
 				if (getState() != ServiceState.REPORT) {
 					return PSStatus.FATAL_ERROR;
 				}
-					/* Normal interruptions should proceed as usual */
+				/* Normal interruptions should proceed as usual */
 			} catch (Exception e) {
 				Logger.err("Exception occurred: " + e.getMessage());
 				return PSStatus.FATAL_ERROR;
@@ -1083,7 +1106,11 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			try {
 				Thread.sleep(DEFAULT_AWAIT_SIDEKICK_CONN);
 			} catch (InterruptedException e) {
-				Logger.warn("Interrupted");
+				Logger.warn("Interrupted connectToSidekick()");
+				/* Handle interrupts due to termination */
+				if (getState() != ServiceState.REPORT) {
+					return PSStatus.FATAL_ERROR;
+				}
 			} catch (Exception e) {
 				Logger.err("Exception occurred: " + e.getMessage());
 				return PSStatus.FATAL_ERROR;
@@ -1112,7 +1139,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			}
 
 			/* Send a report request to the SIDEKICK device */
-			if (sendReportRequest(iChannel) != PSStatus.OK) {
+			if (sendReportRequest(iChannel, "1", "0") != PSStatus.OK) {
 				Logger.err("Failed to send REPORT request");
 				return PSStatus.FAILED;
 			}
@@ -1124,7 +1151,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 				Logger.warn("Interrupted");
 				/* Handle interrupts due to termination */
 				if (getState() != ServiceState.REPORT) {
-					return PSStatus.FAILED;
+					return PSStatus.INTERRUPTED;
 				}
 
 				/* Normal interruptions should proceed as usual */
@@ -1133,6 +1160,22 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			} catch (Exception e) {
 				Logger.err("Exception occurred: " + e.getMessage());
 				return PSStatus.FATAL_ERROR;
+			}
+
+			/* Return FAILED if we do not receive any responses before the timeout */
+			return PSStatus.FAILED;
+		}
+
+		private PSStatus stopSidekickReporting(int iChannel) {
+			if (iChannel <= 0) {
+				Logger.err("Invalid Response Channel: " + iChannel);
+				return PSStatus.FAILED;
+			}
+
+			/* Send a report request to the SIDEKICK device */
+			if (sendReportRequest(iChannel, "0", "0") != PSStatus.OK) {
+				Logger.err("Failed to send REPORT END request");
+				return PSStatus.FAILED;
 			}
 
 			/* Return FAILED if we do not receive any responses before the timeout */
@@ -1372,7 +1415,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 			if (data[SKUtils.IDX_PAYLOAD_DATA_OFFS] == RES_CODE_REG_FAIL) {
 				setState(ServiceState.UNKNOWN);
 				if (_cyclicAntiTheftReportTask != null) {
-					_cyclicAntiTheftReportTask.interrupt();
+					_cyclicAntiTheftReportTask.interruptForCycleFinished();
 				}
 				return;
 			}
@@ -1404,7 +1447,7 @@ public class ProjectSidekickService extends Service implements BluetoothEventHan
 
 		private void handleGetListResponse(String name, String addr, byte[] data) {
 			/* Handle the GET LIST response */
-			String dvcListStr = SKUtils.decodeBinaryDeviceList(data, SKUtils.IDX_PAYLOAD_DATA_OFFS + 1);
+			String dvcListStr = SKUtils.decodeBinaryDeviceList(data, SKUtils.IDX_PAYLOAD_DATA_OFFS);
 			String devices[] = dvcListStr.split(",");
 
 			publishProgress("Device list received");

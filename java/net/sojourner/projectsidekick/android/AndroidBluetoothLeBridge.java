@@ -223,11 +223,14 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 		BluetoothLeConnection bleConn;
 		if (_currentConnections.containsKey(address)) {
 			if (_currentConnections.get(address).isConnected()) {
-				Logger.err("Already connected");
-				return PSStatus.OK;
+				Logger.warn("Already connected");
 			}
+
 			/* Attempt to re-connect using the existing inactive BLE connection */
 			bleConn = _currentConnections.get(address);
+			if (bleConn != null) {
+				bleConn.disconnect();
+			}
 		} else {
 			/* Connect using an entirely new BLE connection */
 			bleConn = new BluetoothLeConnection(device.getName(), address);
@@ -303,22 +306,29 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 
 	@Override
 	public PSStatus disconnectDeviceByAddress(String address) {
-		if (!_currentConnections.containsKey(address)) {
-			if (getState() != BTState.DISCONNECTED) {
-				setState(BTState.DISCONNECTED);
-			}
-			return PSStatus.OK;
+		BluetoothLeConnection bleConn = _currentConnections.get(address);
+		if (bleConn == null) {
+			Logger.err("No connections found for this address: " + address);
+			return PSStatus.FAILED;
 		}
 
-		BluetoothLeConnection bleConn = _currentConnections.get(address);
-		BluetoothGatt bluetoothGatt = bleConn.getBluetoothGatt();
-
 		/* Disconnect and close the connection */
-		bluetoothGatt.disconnect();
-		bluetoothGatt.close();
+		if (!bleConn.disconnect()) {
+			Logger.err("Disconnect failed: " + address);
+		}
+
+		if (!bleConn.close()) {
+			Logger.err("Close failed: " + address);
+		}
+
+		bleConn.setConnected(false);
 
 		/* Remove it from the list */
-		_currentConnections.remove(bleConn);
+		if (_currentConnections.remove(address) == null) {
+			Logger.err("Device not found in list: " + address);
+		}
+
+		setState(BTState.DISCONNECTED);
 		
 		return PSStatus.OK;
 	}
@@ -721,6 +731,11 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 			return _bluetoothGatt;
 		}
 
+		public void setConnected(boolean isConnected) {
+			_isConnected = isConnected;
+			return;
+		}
+
 		public boolean isConnected() {
 			return _isConnected;
 		}
@@ -782,7 +797,9 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 			_gattTaskQueue.add(new BluetoothGattRequest(_targetCharacteristic, data));
 
 			/* Nudge the Queue */
-			nudgeQueue();
+			if (!nudgeQueue()) {
+				return false;
+			}
 
 			return true;
 		}
@@ -905,42 +922,47 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 		private class BluetoothGattCallbackHandler extends BluetoothGattCallback {
 			@Override
 			public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-				if (newState == BluetoothProfile.STATE_CONNECTED) {
-					_isConnected = true;
+				try {
+					if (newState == BluetoothProfile.STATE_CONNECTED) {
+						_isConnected = true;
 
-					/* Start discovery of services as well */
-					if (gatt.discoverServices() == false) {
-						Logger.err("Could not discover services for connection");
+						/* Start discovery of services as well */
+						if (gatt.discoverServices() == false) {
+							Logger.err("Could not discover services for connection");
+						}
+
+						if (gatt.getDevice() == null) {
+							Logger.warn("Received NULL BluetoothDevice reference");
+							notifyOnConnected(getDeviceName(), getDeviceAddress());
+						} else {
+							notifyOnConnected(gatt.getDevice().getName(), gatt.getDevice().getAddress());
+						}
+					} else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+						_isConnected = false;
+						_gattTaskQueue.clear();
+
+						/* Unset our previously known characteristics */
+						_modelNumCharacteristic = null;
+						_serialPortCharacteristic = null;
+						_commandCharacteristic = null;
+
+						if (gatt.getDevice() == null) {
+							Logger.warn("Received NULL BluetoothDevice reference");
+							notifyOnDisconnected("", "");
+						} else {
+							notifyOnDisconnected(gatt.getDevice().getName(), gatt.getDevice().getAddress());
+						}
 					}
 
-					if (gatt.getDevice() == null) {
-						Logger.warn("Received NULL BluetoothDevice reference");
-						notifyOnConnected(getDeviceName(), getDeviceAddress());
-					} else {
-						notifyOnConnected(gatt.getDevice().getName(), gatt.getDevice().getAddress());
+					Logger.dbg("Bluetooth LE Conn State Changed: " + newState);
+
+					/* Interrupt any waiting threads */
+					if (_waitingThread != null) {
+						_waitingThread.interrupt();
 					}
-				} else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-					_isConnected = false;
-					_gattTaskQueue.clear();
-
-					/* Unset our previously known characteristics */
-					_modelNumCharacteristic = null;
-					_serialPortCharacteristic = null;
-					_commandCharacteristic = null;
-
-					if (gatt.getDevice() == null) {
-						Logger.warn("Received NULL BluetoothDevice reference");
-						notifyOnDisconnected("", "");
-					} else {
-						notifyOnDisconnected(gatt.getDevice().getName(), gatt.getDevice().getAddress());
-					}
-				}
-
-				Logger.dbg("Bluetooth LE Conn State Changed: " + newState);
-
-				/* Interrupt any waiting threads */
-				if (_waitingThread != null) {
-					_waitingThread.interrupt();
+				} catch (Exception e) {
+					Logger.err("Exception occurred: " + e.getMessage());
+					e.printStackTrace();
 				}
 				return;
 			}
