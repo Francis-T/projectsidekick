@@ -179,8 +179,8 @@ public class MasterListAdapter extends ArrayAdapter<MasterListItem> {
                         data.putInt("DEVICE_ID", deviceId);
 
                         try {
-                            ServiceBindingListActivity parentActivity =
-                                    (ServiceBindingListActivity) _context;
+                            ServiceBindingActivity parentActivity =
+                                    (ServiceBindingActivity) _context;
                             parentActivity.callService(ProjectSidekickService.MSG_DELETE_DEVICE, data, null);
                         } catch (Exception e) {
                             Logger.err("Exception occurred: " + e.getMessage());

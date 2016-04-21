@@ -1,99 +1,131 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
+    android:layout_margin="10dp"
     tools:context="${relativePackage}.${activityClass}" >
 
-    <TextView
-        android:id="@+id/txv_dvc_info_hdr"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Device Info"
-        android:textSize="22sp" />
-
-    <TextView
+    <!--TextView
         android:id="@+id/txv_dvc_info"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Name: \nAddress: \nOther Info: \n"
         android:textSize="26sp"
-        android:layout_marginBottom="10dp" />
-    
-    <LinearLayout 
+        android:layout_marginBottom="10dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="0dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="52dp" /-->
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Project Sidekick's Test Device"
+        android:id="@+id/txv_dvc_name"
+        android:textSize="26sp"
+        android:layout_marginTop="5dp"
+        android:layout_marginBottom="5dp"
+        android:layout_alignParentTop="true"
+        android:layout_centerHorizontal="true" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="AA:BB:CC:DD:EE:FF"
+        android:id="@+id/txv_dvc_addr"
+        android:textSize="22sp"
+        android:layout_marginTop="5dp"
+        android:layout_marginBottom="5dp"
+        android:layout_below="@+id/txv_dvc_name"
+        android:layout_centerHorizontal="true" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="State: Unknown"
+        android:id="@+id/txv_dvc_state"
+        android:textSize="18sp"
+        android:layout_marginTop="5dp"
+        android:layout_marginBottom="5dp"
+        android:layout_below="@+id/txv_dvc_addr"
+        android:layout_centerHorizontal="true"/>
+
+    <GridLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
-	    <Button
-	        android:id="@+id/btn_connect"
-	        android:layout_weight="1"
-	        android:layout_width="0dip"
-	        android:layout_height="wrap_content"
-	        android:enabled="true"
-	        android:text="Connect" />
-	
-	    <Button
+        android:columnCount="3"
+        android:rowCount="3"
+        android:layout_below="@+id/txv_dvc_state"
+        android:layout_centerHorizontal="true"
+        android:scrollbars="vertical"
+        android:orientation="horizontal"
+        android:id="@+id/gridLayout">
+
+        <Button
+            android:id="@+id/btn_connect"
+            android:layout_gravity="fill"
+            android:enabled="true"
+            android:minHeight="100dp"
+            android:minWidth="100dp"
+            android:text="Connect" />
+
+        <Button
 	        android:id="@+id/btn_register"
-	        android:layout_weight="1"
-	        android:layout_width="0dip"
-	        android:layout_height="wrap_content"
 	        android:enabled="false"
+            android:layout_gravity="fill"
+            android:minHeight="100dp"
+            android:minWidth="100dp"
 	        android:text="Register" />
-    </LinearLayout>
-    
-    <LinearLayout 
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-	    <Button
-	        android:id="@+id/btn_rename"
-	        android:layout_weight="1"
-	        android:layout_width="0dip"
-	        android:layout_height="wrap_content"
-	        android:enabled="false"
-	        android:text="Rename" />
-	
-	    <Button
+
+        <Button
+            android:id="@+id/btn_rename"
+            android:enabled="false"
+            android:layout_gravity="fill"
+            android:minHeight="100dp"
+            android:minWidth="100dp"
+            android:text="Rename" />
+
+        <Button
 	        android:id="@+id/btn_delete"
-	        android:layout_weight="1"
-	        android:layout_width="0dip"
 	        android:layout_height="wrap_content"
 	        android:enabled="true"
+            android:layout_gravity="fill"
+            android:minHeight="100dp"
+            android:minWidth="100dp"
 	        android:text="Delete" />
-    </LinearLayout>
 
-    <!--Button
-        android:id="@+id/btn_req_discover"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:enabled="false"
-        android:text="Request Device Discovery" /-->
-
-    <!--Button
-        android:id="@+id/btn_req_discover_list"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:enabled="false"
-        android:text="List Discovered Devices" /-->
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
         <Button
             android:id="@+id/btn_req_guard_list"
-            android:layout_weight="1"
-            android:layout_width="0dip"
-            android:layout_height="wrap_content"
             android:enabled="false"
-            android:text="List Devices" />
+            android:layout_gravity="fill"
+            android:minHeight="100dp"
+            android:minWidth="100dp"
+            android:text="List\nDevices" />
+
         <Button
             android:id="@+id/btn_req_guard_start"
-            android:layout_weight="1"
-            android:layout_width="0dip"
-            android:layout_height="wrap_content"
             android:enabled="false"
+            android:layout_gravity="fill"
+            android:minHeight="100dp"
+            android:minWidth="100dp"
             android:text="Guard" />
-    </LinearLayout>
 
-</LinearLayout>
+        <Button
+            android:id="@+id/btn_req_alarm"
+            android:enabled="true"
+            android:layout_gravity="fill"
+            android:minHeight="100dp"
+            android:minWidth="100dp"
+            android:text="Manual\nAlarm" />
+
+        <Button
+            android:id="@+id/btn_settings"
+            android:enabled="false"
+            android:layout_gravity="fill"
+            android:minHeight="100dp"
+            android:minWidth="100dp"
+            android:text="Settings" />
+    </GridLayout>
+
+</RelativeLayout>

@@ -8,8 +8,10 @@ import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Build;
 import android.os.Handler;
 
@@ -21,6 +23,7 @@ import net.sojourner.projectsidekick.utils.Logger;
 
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,8 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 	private static final String BLUNO_COMMAND_PASSWORD_STR = "AT+PASSWOR=DFRobot\r\n";
 	private static final String BLUNO_COMMAND_BAUD_RATE_STR = "AT+CURRUART=" + BLUNO_BAUD_RATE + "\r\n";
 
+	private static final int RSSI_VALUE_UNKNOWN = -65535;
+
 	private final UUID UUID_SERIAL 		= UUID.fromString("0000dfb1-0000-1000-8000-00805F9B34FB");
 	private final UUID UUID_COMMAND 	= UUID.fromString("0000dfb2-0000-1000-8000-00805F9B34FB");
 	private final UUID UUID_MODEL_NUM	= UUID.fromString("00002a24-0000-1000-8000-00805F9B34FB");
@@ -46,6 +51,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 	private BluetoothAdapter 	_bluetoothAdapter 	= BluetoothAdapter.getDefaultAdapter();
 	private boolean 			_isServer 			= false;
 	private boolean				_isScanning			= false;
+	private boolean				_isRecvrRegistered	= false;
 	private BTState				_state 				= BTState.UNKNOWN;
 
 	/* Device list maps */
@@ -122,8 +128,15 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 			Logger.err("Bluetooth is not enabled");
 			return PSStatus.FAILED;
 		}
-		
+
 		setupDeviceLists();
+
+		/* Register our receivers */
+		IntentFilter filter = new IntentFilter();
+		filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+		_context.registerReceiver(_receiver, filter);
+
+		_isRecvrRegistered  = true;
 		
 		/* Remember initialization settings (either server or client) */
 		_isServer = isServer;
@@ -176,24 +189,6 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 	@Override
 	public PSStatus listen() {
 		throw new UnsupportedOperationException("listen() is not supported for this implementation");
-
-//		/* Allow listen only if started as a Bluetooth server */
-//		if (!_isServer) {
-//			Logger.err("Not initialized as a Bluetooth Server");
-//			return PSStatus.FAILED;
-//		}
-//
-//		/* Allow listen only if we're coming from the disconnected state */
-//		if (_state != BTState.DISCONNECTED) {
-//			Logger.err("Invalid state for listen()");
-//			return PSStatus.FAILED;
-//		}
-//
-//		setState(BTState.LISTENING);
-//
-//		this.getPairedDeviceNames();
-//
-//		return PSStatus.OK;
 	}
 	
 	@Override
@@ -306,6 +301,11 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 
 	@Override
 	public PSStatus disconnectDeviceByAddress(String address) {
+		if (_currentConnections == null) {
+			Logger.err("No connections found");
+			return PSStatus.FAILED;
+		}
+
 		BluetoothLeConnection bleConn = _currentConnections.get(address);
 		if (bleConn == null) {
 			Logger.err("No connections found for this address: " + address);
@@ -467,6 +467,23 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 		return false;
 	}
 
+	@Override
+	public int getRssi() {
+		if (_currentConnections == null) {
+			return RSSI_VALUE_UNKNOWN;
+		}
+
+		if (_currentConnections.isEmpty()) {
+			return RSSI_VALUE_UNKNOWN;
+		}
+
+		for (Map.Entry<String, BluetoothLeConnection> conn : _currentConnections.entrySet()) {
+			return conn.getValue().getRssi();
+		}
+
+		return RSSI_VALUE_UNKNOWN;
+	}
+
 	/*********************/
 	/** Private Methods **/
 	/*********************/
@@ -499,6 +516,12 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 		}
 
 		_eventHandler = null;			/* Initialized by setEventHandler() */
+
+		/* Unregister our receivers */
+		if (_isRecvrRegistered) {
+			_context.unregisterReceiver(_receiver);
+			_isRecvrRegistered = false;
+		}
 		
 		clearDeviceLists();
 		
@@ -614,9 +637,37 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 		return;
 	}
 
+	private void notifyOnBluetoothDeactivated() {
+		stop();
+
+		/* Notify the event handler that Bluetooth has been deactivated */
+		if (_eventHandler != null) {
+			_eventHandler.onDeactivated();
+		}
+
+		return;
+	}
+
 	/***************************/
 	/** Private Inner Classes **/
 	/***************************/
+	private BroadcastReceiver _receiver = new BroadcastReceiver() {
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			String action = intent.getAction();
+			if (action.equals(BluetoothAdapter.ACTION_STATE_CHANGED)) {
+				int iNewState = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1);
+
+				if ((iNewState == BluetoothAdapter.STATE_OFF) ||
+						(iNewState == BluetoothAdapter.STATE_TURNING_OFF)) {
+						/* If our Bluetooth is deactivating, then we have to notify our users */
+					notifyOnBluetoothDeactivated();
+				}
+			}
+			return;
+		}
+	};
+
 	private BluetoothAdapter.LeScanCallback _leScanCbf = new BluetoothAdapter.LeScanCallback() {
 		@Override
 		public void onLeScan(BluetoothDevice device, int rssi, byte[] scanRecord) {
@@ -696,6 +747,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 		private String _deviceName = "";
 		private String _deviceAddress = "";
 		private BluetoothGatt _bluetoothGatt = null;
+		private int _rssi = -1;
 		private boolean _isConnected = false;
 		private ByteArrayOutputStream _incomingData = null;
 		private byte[] _dataBuffer = null;
@@ -748,9 +800,11 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 			return _deviceAddress;
 		}
 
+		public int getRssi() { return _rssi; };
+
 		public boolean disconnect() {
 			if (_bluetoothGatt == null) {
-				Logger.err("No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
+				Logger.err("disconnect() : No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
 				return false;
 			}
 
@@ -761,7 +815,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 
 		public boolean close() {
 			if (_bluetoothGatt == null) {
-				Logger.err("No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
+				Logger.err("close() : No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
 				return false;
 			}
 
@@ -777,7 +831,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 			}
 
 			if (_bluetoothGatt == null) {
-				Logger.err("No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
+				Logger.err("write() : No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
 				return false;
 			}
 
@@ -815,7 +869,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 			}
 
 			if (_bluetoothGatt == null) {
-				Logger.err("No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
+				Logger.err("read() : No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
 				return false;
 			}
 
@@ -838,7 +892,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 				}
 
 				if (_bluetoothGatt == null) {
-					Logger.err("No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
+					Logger.err("nudgeQueue() : No BluetoothGatt reference for " + _deviceName + "/" + _deviceAddress);
 					return false;
 				}
 
@@ -884,6 +938,7 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 		private boolean parseReceived(BluetoothGattCharacteristic characteristic) {
 			if (_incomingData == null) {
 				Logger.info("New data incoming...");
+				_dataBuffer = null;
 				_incomingData = new ByteArrayOutputStream();
 			}
 
@@ -925,17 +980,9 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 				try {
 					if (newState == BluetoothProfile.STATE_CONNECTED) {
 						_isConnected = true;
-
 						/* Start discovery of services as well */
 						if (gatt.discoverServices() == false) {
 							Logger.err("Could not discover services for connection");
-						}
-
-						if (gatt.getDevice() == null) {
-							Logger.warn("Received NULL BluetoothDevice reference");
-							notifyOnConnected(getDeviceName(), getDeviceAddress());
-						} else {
-							notifyOnConnected(gatt.getDevice().getName(), gatt.getDevice().getAddress());
 						}
 					} else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
 						_isConnected = false;
@@ -952,14 +999,14 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 						} else {
 							notifyOnDisconnected(gatt.getDevice().getName(), gatt.getDevice().getAddress());
 						}
+
+						/* Interrupt any waiting threads */
+						if (_waitingThread != null) {
+							_waitingThread.interrupt();
+						}
 					}
 
 					Logger.dbg("Bluetooth LE Conn State Changed: " + newState);
-
-					/* Interrupt any waiting threads */
-					if (_waitingThread != null) {
-						_waitingThread.interrupt();
-					}
 				} catch (Exception e) {
 					Logger.err("Exception occurred: " + e.getMessage());
 					e.printStackTrace();
@@ -985,6 +1032,13 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 
 						_targetCharacteristic = _serialPortCharacteristic;
 						gatt.setCharacteristicNotification(_targetCharacteristic, true);
+
+						/* At this point our connection is ready */
+						/* Interrupt any waiting threads */
+						if (_waitingThread != null) {
+							_waitingThread.interrupt();
+						}
+						notifyOnConnected(getDeviceName(), getDeviceAddress());
 					} else {
 						Logger.err("Unexpected data received: " + data);
 					}
@@ -1001,6 +1055,13 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 
 			@Override
 			public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+				/* Attempt to update our remote RSSI everytime a WRITE is initiated */
+				if (gatt != null) {
+					if (!gatt.readRemoteRssi()) {
+						Logger.err("Failed to initiate RSSI read");
+					}
+				}
+
 				if (status == BluetoothGatt.GATT_SUCCESS) {
 
 					Logger.info("Wrote at " + characteristic.getUuid() + " with " + new String(characteristic.getValue()));
@@ -1052,6 +1113,8 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 				/* Read the model number off our Bluno device */
 				_targetCharacteristic = _modelNumCharacteristic;
 				gatt.setCharacteristicNotification(_targetCharacteristic, true);
+
+				_bluetoothGatt = gatt; // TODO Hacky
 				try {
 					Thread.sleep(500);
 				} catch (InterruptedException e) {
@@ -1069,6 +1132,17 @@ public class AndroidBluetoothLeBridge implements IBluetoothBridge {
 				if (!parseReceived(characteristic)) {
 					Logger.err("Failed to parse received data");
 				}
+
+				return;
+			}
+
+			@Override
+			public void onReadRemoteRssi(BluetoothGatt gatt, int rssi, int status) {
+				if (status == BluetoothGatt.GATT_SUCCESS) {
+					_rssi = rssi;
+					Logger.info("RSSI: " + _rssi);
+				}
+				super.onReadRemoteRssi(gatt, rssi, status);
 				return;
 			}
 		}

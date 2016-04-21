@@ -34,6 +34,7 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 	private final UUID MY_UUID_SECURE = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 	private final String NAME_INSECURE = "BluetoothInsecure";
 	private final UUID MY_UUID_INSECURE = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+	private static final int RSSI_VALUE_UNKNOWN = -65535;
 	
 	private static AndroidBluetoothBridge _androidBluetoothBridge = null;
 	
@@ -433,6 +434,10 @@ public class AndroidBluetoothBridge implements IBluetoothBridge {
 		}
 		
 		return false;
+	}
+	@Override
+	public int getRssi() {
+		return RSSI_VALUE_UNKNOWN;
 	}
 
 	/*********************/

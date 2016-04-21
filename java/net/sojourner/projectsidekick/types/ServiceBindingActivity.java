@@ -1,6 +1,5 @@
 package net.sojourner.projectsidekick.types;
 
-import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -10,6 +9,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.Messenger;
+import android.support.v7.app.AppCompatActivity;
 
 import net.sojourner.projectsidekick.ProjectSidekickService;
 import net.sojourner.projectsidekick.utils.Logger;
@@ -17,7 +17,7 @@ import net.sojourner.projectsidekick.utils.Logger;
 /**
  * Created by francis on 2/20/16.
  */
-public abstract class ServiceBindingActivity extends Activity {
+public abstract class ServiceBindingActivity extends AppCompatActivity {
     private Messenger _messenger    = null;
     private Messenger _service      = null;
     private boolean   _bIsBound     = false;

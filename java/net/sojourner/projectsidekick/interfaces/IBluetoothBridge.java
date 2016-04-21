@@ -10,6 +10,7 @@ public interface IBluetoothBridge {
 	public String getLocalName();
 	public String getLocalAddress();
 	public boolean isReady();
+	public int getRssi();
 	public PSStatus initialize(Object initObject, boolean isServer);
 	public void startDeviceDiscovery();
 	public void stopDeviceDiscovery();

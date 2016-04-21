@@ -3,7 +3,7 @@ package net.sojourner.projectsidekick;
 import net.sojourner.projectsidekick.types.MasterListAdapter;
 import net.sojourner.projectsidekick.types.MasterListItem;
 import net.sojourner.projectsidekick.types.PSStatus;
-import net.sojourner.projectsidekick.types.ServiceBindingListActivity;
+import net.sojourner.projectsidekick.types.ServiceBindingActivity;
 import net.sojourner.projectsidekick.utils.Logger;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -13,9 +13,10 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.ImageButton;
+import android.widget.ListView;
 import android.widget.Toast;
 
-public class AppModeBeaconMasterListActivity extends ServiceBindingListActivity {
+public class AppModeBeaconMasterListActivity extends ServiceBindingActivity {
 	private ProjectSidekickApp _app = (ProjectSidekickApp) getApplication();
     private MasterListAdapter _masterListAdapter = null;
 	private String _deviceAddr = "";
@@ -26,8 +27,9 @@ public class AppModeBeaconMasterListActivity extends ServiceBindingListActivity 
         setContentView(R.layout.activity_app_beacon_master_list);
 
 		/* Instantiate the adapter for the master list */
+		ListView listDevices = (ListView) findViewById(R.id.list_devices);
 		_masterListAdapter = new MasterListAdapter(this);
-		setListAdapter(_masterListAdapter);
+		listDevices.setAdapter(_masterListAdapter);
 
 		/* Extract the raw master list from the intent and parse it */
 		Intent intent = getIntent();
@@ -51,10 +53,6 @@ public class AppModeBeaconMasterListActivity extends ServiceBindingListActivity 
 					}
 				}
 		);
-
-
-		/* Invoke onCreate() on our superclass to start the service */
-		super.onCreate(savedInstanceState);
 
         return;
     }

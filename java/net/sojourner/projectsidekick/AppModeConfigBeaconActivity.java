@@ -1,5 +1,6 @@
 package net.sojourner.projectsidekick;
 
+import net.sojourner.projectsidekick.types.AlarmState;
 import net.sojourner.projectsidekick.types.BTState;
 import net.sojourner.projectsidekick.types.KnownDevice;
 import net.sojourner.projectsidekick.types.ServiceBindingActivity;
@@ -23,15 +24,15 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
-	public static final int MSG_RESP_SERVICE_STATE		= 1;
-	public static final int MSG_RESP_BLUETOOTH_STATE	= 2;
-
 	private ProjectSidekickApp 	_app 				= (ProjectSidekickApp) getApplication();
     private String 				_deviceName 		= "";
     private String 				_deviceAddr 		= "";
     private boolean 			_isConnected 		= false;
+	private AlarmState			_deviceAlarmState	= AlarmState.QUIET;
+	private static final long	DEFAULT_COMMAND_TIMEOUT	= 20000;
 
-	private ProgressDialog 		_progress			= null;
+	private ProgressDialog 		_progress				= null;
+	private Handler 			_progressTimeoutHandler = null;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -83,16 +84,13 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 							disconnectDevice();
 							//updateGuiToDisconnected();
 							_isConnected = false;
-							_progress.setMessage("Disconnecting...");
+							launchProgressBar("Disconnecting...", "Disconnect failed", DEFAULT_COMMAND_TIMEOUT);
 						} else {
 							if (connectToDevice() != PSStatus.OK) {
 								display("Connection Failed!");
 							}
-							_progress.setMessage("Connecting...");
+							launchProgressBar("Connecting...", "Connect failed", DEFAULT_COMMAND_TIMEOUT);
 						}
-
-						_progress.setProgress(0);
-						_progress.show();
 						return;
 					}
 				}
@@ -105,7 +103,7 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 				public void onClick(View v) {
 					KnownDevice kd = _app.findRegisteredDevice(_deviceAddr);
 					if (kd == null) {
-						display( _deviceName + " has not yet been registered");
+						display(_deviceName + " has not yet been registered");
 						return;
 					}
 					showRenameDeviceDialog(kd);
@@ -125,9 +123,7 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 
 					btnRename.setEnabled(true);
 					/* Present a progress bar */
-					_progress.setMessage("Registering Device...");
-					_progress.setProgress(0);
-					_progress.show();
+					launchProgressBar("Registering Device...", "Register failed", DEFAULT_COMMAND_TIMEOUT);
 
 					return;
 				}
@@ -158,9 +154,7 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 						requestGuardList();
 						/* Present a progress bar while we wait for the
 						 *  list to be retrieved */
-						_progress.setMessage("Obtaining Device List...");
-						_progress.setProgress(0);
-						_progress.show();
+						launchProgressBar("Obtaining Device List...", "Failed to get device list", DEFAULT_COMMAND_TIMEOUT);
 						return;
 					}
 				}
@@ -173,17 +167,52 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 					public void onClick(View v) {
 						requestGuardStart();
 						/* Present a progress bar */
-						_progress.setMessage("Starting Sidekick Anti-theft Mode...");
-						_progress.setProgress(0);
-						_progress.show();
+						launchProgressBar("Starting Sidekick Anti-theft Mode...", "Failed to start Anti-Theft Mode", DEFAULT_COMMAND_TIMEOUT);
 
 						return;
 					}
 				}
 		);
 
-		/* Invoke onCreate() on our superclass to start the service */
-		super.onCreate(savedInstanceState);
+		final Button btnReqAlarm = (Button) findViewById(R.id.btn_req_alarm);
+		btnReqAlarm.setOnClickListener(
+				new View.OnClickListener() {
+					@Override
+					public void onClick(View v) {
+						if (_deviceAlarmState == AlarmState.QUIET) {
+							requestLocateStart();
+							/* Present a progress bar */
+							launchProgressBar("Triggering Alarm...", "Failed to Trigger Alarm", DEFAULT_COMMAND_TIMEOUT);
+						} else if (_deviceAlarmState == AlarmState.EMERGENCY) {
+							showAlarmDisableSecurityDialog();
+						} else {
+							requestAlarmStop();
+							/* Present a progress bar */
+							launchProgressBar("Stopping Alarm...", "Failed to Stop Alarm", DEFAULT_COMMAND_TIMEOUT);
+						}
+						return;
+					}
+				}
+		);
+		btnReqAlarm.setOnLongClickListener(
+				new View.OnLongClickListener() {
+					@Override
+					public boolean onLongClick(View v) {
+						if (_deviceAlarmState == AlarmState.QUIET) {
+							requestAlarmStart();
+							/* Present a progress bar */
+							launchProgressBar("Triggering Alarm...", "Failed to Trigger Alarm", DEFAULT_COMMAND_TIMEOUT);
+						} else if (_deviceAlarmState == AlarmState.EMERGENCY) {
+							showAlarmDisableSecurityDialog();
+						} else {
+							requestAlarmStop();
+							/* Present a progress bar */
+							launchProgressBar("Triggering Alarm...", "Failed to Stop Alarm", DEFAULT_COMMAND_TIMEOUT);
+						}
+						return true;
+					}
+				}
+		);
 
 		/* Set our local message handler for use with service queries */
 		setMessageHandler(new MessageHandler());
@@ -206,6 +235,8 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 			filter.addAction(ProjectSidekickService.ACTION_UNREGISTERED);
 			filter.addAction(ProjectSidekickService.ACTION_REP_STARTED);
 			filter.addAction(ProjectSidekickService.ACTION_REP_FINISHED);
+			filter.addAction(ProjectSidekickService.ACTION_ALARM_CHANGED);
+			filter.addAction(ProjectSidekickService.ACTION_STATE_CHANGED);
 			registerReceiver(_receiver, filter);
 		}
 
@@ -330,7 +361,6 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
     	return PSStatus.OK;
     }
 
-
 	private PSStatus requestGuardStart() {
 		if (!_isConnected) {
 			display("Not yet connected!");
@@ -347,6 +377,56 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 			return PSStatus.FAILED;
 		}
 		display("Start Guard request sent");
+
+		return PSStatus.OK;
+	}
+
+	private PSStatus requestLocateStart() {
+		PSStatus PSStatus;
+
+		Bundle extras = new Bundle();
+		extras.putString("DEVICE_ADDR", _deviceAddr);
+		extras.putString("MODE", ProjectSidekickService.ALARM_CODE_BEEP);
+		PSStatus = callService(ProjectSidekickService.MSG_TRIGGER_ALARM, extras, null);
+		if (PSStatus != PSStatus.OK) {
+			display("Failed to send Locate request");
+			return PSStatus.FAILED;
+		}
+
+		return PSStatus.OK;
+	}
+
+	private PSStatus requestAlarmStart() {
+		PSStatus PSStatus;
+
+		Bundle extras = new Bundle();
+		extras.putString("DEVICE_ADDR", _deviceAddr);
+		extras.putString("MODE", ProjectSidekickService.ALARM_CODE_EMERGENCY);
+		PSStatus = callService(ProjectSidekickService.MSG_TRIGGER_ALARM, extras, null);
+		if (PSStatus != PSStatus.OK) {
+			display("Failed to send Alarm request");
+			return PSStatus.FAILED;
+		}
+
+		return PSStatus.OK;
+	}
+
+	private PSStatus requestAlarmStop() {
+		if (!_isConnected) {
+			display("Not yet connected!");
+			return PSStatus.FAILED;
+		}
+
+		PSStatus PSStatus;
+
+		Bundle extras = new Bundle();
+		extras.putString("DEVICE_ADDR", _deviceAddr);
+		extras.putString("MODE", ProjectSidekickService.ALARM_CODE_DISABLED);
+		PSStatus = callService(ProjectSidekickService.MSG_TRIGGER_ALARM, extras, null);
+		if (PSStatus != PSStatus.OK) {
+			display("Failed to send Alarm request");
+			return PSStatus.FAILED;
+		}
 
 		return PSStatus.OK;
 	}
@@ -386,7 +466,7 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
     private void updateGuiToConnected() {
         Button btnConnect =
                 (Button) findViewById(R.id.btn_connect);
-        btnConnect.setText("Disconnect");
+        btnConnect.setText("Disconn");
 
         Button btnRegister =
             	(Button) findViewById(R.id.btn_register);
@@ -396,10 +476,6 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
                 (Button) findViewById(R.id.btn_rename);
         btnRename.setEnabled(true);
 
-//        Button btnDelete  = 
-//            (Button) findViewById(R.id.btn_delete);
-//        btnDelete.setEnabled(true);
-
         Button btnReqGuardList =
             (Button) findViewById(R.id.btn_req_guard_list);
         btnReqGuardList.setEnabled(true);
@@ -408,9 +484,7 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 				(Button) findViewById(R.id.btn_req_guard_start);
 		btnReqStartGuard.setEnabled(true);
 
-		if (_progress.isShowing()) {
-			_progress.hide();
-		}
+		cancelProgressBar();
 
         return;
     }
@@ -428,10 +502,6 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
                 (Button) findViewById(R.id.btn_rename);
         btnRename.setEnabled(false);
 
-//        Button btnDelete  = 
-//            (Button) findViewById(R.id.btn_delete);
-//        btnDelete.setEnabled(false);
-
         Button btnReqGuardList =
             (Button) findViewById(R.id.btn_req_guard_list);
         btnReqGuardList.setEnabled(false);
@@ -440,15 +510,16 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 				(Button) findViewById(R.id.btn_req_guard_start);
 		btnReqStartGuard.setEnabled(false);
 
-		if (_progress.isShowing()) {
-			_progress.hide();
-		}
+		cancelProgressBar();
         return;
     }
 
 	private void guiReloadDeviceInfo() {
-        TextView txvDvcInfo = (TextView) findViewById(R.id.txv_dvc_info);
-        txvDvcInfo.setText(_deviceName + "\n" + _deviceAddr);
+        TextView txvDvcName = (TextView) findViewById(R.id.txv_dvc_name);
+		txvDvcName.setText(_deviceName);
+
+		TextView txvDvcAddr = (TextView) findViewById(R.id.txv_dvc_addr);
+		txvDvcAddr.setText(_deviceAddr);
         return;
 	}
 
@@ -475,18 +546,6 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 						Logger.err("Device not registered. Renaming is meaningless.");
 					}
 					finish();
-
-//					fkd.setName(nameStr);
-//
-//					_app = getAppRef();
-//					if (_app.updateRegisteredDevice(fkd) != PSStatus.OK) {
-//						Logger.err("Device not registered. Renaming is meaningless.");
-//					}
-//
-//					_deviceName = nameStr;
-//					guiReloadDeviceInfo();
-//
-//					display("Renamed!");
 					return;
 				}
 			})
@@ -543,6 +602,52 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 		return;
 	}
 
+
+	private void showAlarmDisableSecurityDialog() {
+		if (_app == null) {
+			_app = (ProjectSidekickApp) getApplication();
+		}
+
+		final EditText edtSecurityCode = new EditText(this);
+
+		AlertDialog.Builder dlgBuilder = new AlertDialog.Builder(this);
+		dlgBuilder.setTitle("Deactivate Alarm");
+		dlgBuilder.setMessage("Enter security code to deactivate the alarm")
+				.setCancelable(false)
+				.setView(edtSecurityCode)
+				.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+					@Override
+					public void onClick(DialogInterface dialog, int which) {
+						String securityCode = edtSecurityCode.getText().toString();
+
+						if (!securityCode.equals("QWERTY")) {
+							display("Invalid security code!");
+							dialog.cancel();
+							return;
+						}
+
+						display("Deactivating alarm...");
+						requestAlarmStop();
+						/* Present a progress bar */
+						launchProgressBar("Stopping Alarm...", "Failed to Stop Alarm", DEFAULT_COMMAND_TIMEOUT);
+
+						return;
+					}
+				})
+				.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+					@Override
+					public void onClick(DialogInterface dialog, int which) {
+						display("Cancelled!");
+						dialog.cancel();
+						return;
+					}
+				});
+
+		dlgBuilder.create().show();
+
+		return;
+	}
+
 	private ProjectSidekickApp getAppRef() {
 		return (ProjectSidekickApp) getApplication();
 	}
@@ -580,6 +685,52 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 		return PSStatus.OK;
 	}
 
+	private PSStatus launchProgressBar(String displayMessage, String timeoutMessage, long timeout) {
+		if ( setProgressTimeout(timeout, timeoutMessage) != PSStatus.OK ) {
+			return PSStatus.FAILED;
+		}
+
+		_progress.setProgress(0);
+		_progress.setMessage(displayMessage);
+		_progress.show();
+
+		return PSStatus.OK;
+	}
+
+	private PSStatus setProgressTimeout(long timeout, final String timeoutMsg) {
+		if (_progressTimeoutHandler != null) {
+			return PSStatus.FAILED;
+		}
+
+		_progressTimeoutHandler = new Handler();
+		_progressTimeoutHandler.postDelayed(
+				new Runnable() {
+					@Override
+					public void run() {
+						if (_progressTimeoutHandler != null) {
+							display(timeoutMsg);
+						}
+						cancelProgressBar();
+					}
+				},
+				timeout
+		);
+
+		return PSStatus.OK;
+	}
+
+	private void cancelProgressBar() {
+		if (_progressTimeoutHandler != null) {
+			_progressTimeoutHandler = null;
+		}
+
+		if (_progress.isShowing()) {
+			_progress.hide();
+		}
+
+		return;
+	}
+
 	/* ********************* */
 	/* Private Inner Classes */
 	/* ********************* */
@@ -590,12 +741,12 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 
 			Bundle stateBundle = msg.getData();
 			switch (msg.what) {
-				case MSG_RESP_SERVICE_STATE:
+				case ProjectSidekickService.MSG_RESP_SERVICE_STATE:
 					/* Extract the service state */
 					String svcState = stateBundle.getString("STATE");
 					status = handleServiceState(svcState);
 					break;
-				case MSG_RESP_BLUETOOTH_STATE:
+				case ProjectSidekickService.MSG_RESP_BLUETOOTH_STATE:
 					/* Extract the bluetooth state */
 					String btState = stateBundle.getString("STATE");
 					status = handleBluetoothState(btState);
@@ -628,7 +779,7 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 	        	String msg = intent.getStringExtra("SENDER_DATA");
 	        	display(msg);
 	        } else if (ProjectSidekickService.ACTION_LIST_RECEIVED.equals(action)) {
-				_progress.hide();
+				cancelProgressBar();
 	        	Intent listIntent
 	        		= new Intent(AppModeConfigBeaconActivity.this,
 	        				AppModeBeaconMasterListActivity.class);
@@ -636,21 +787,33 @@ public class AppModeConfigBeaconActivity extends ServiceBindingActivity {
 				listIntent.putExtra("DEVICES", intent.getStringArrayExtra("DEVICES"));
 	        	startActivity(listIntent);
 	        } else if (ProjectSidekickService.ACTION_REGISTERED.equals(action)) {
-				if (_progress.isShowing()) {
-					_progress.hide();
-				}
+				cancelProgressBar();
 			} else if (ProjectSidekickService.ACTION_DATA_RECEIVE.equals(action)) {
-				if (_progress.isShowing()) {
-					_progress.hide();
-				}
+				cancelProgressBar();
 			} else if (ProjectSidekickService.ACTION_REP_STARTED.equals(action)) {
-				if (_progress.isShowing()) {
-					_progress.hide();
-				}
+				cancelProgressBar();
 			} else if (ProjectSidekickService.ACTION_REP_FINISHED.equals(action)) {
-				if (_progress.isShowing()) {
-					_progress.hide();
+				cancelProgressBar();
+			} else if (ProjectSidekickService.ACTION_ALARM_CHANGED.equals(action)) {
+				cancelProgressBar();
+				/* Update our known alarm state */
+				String alarmMode = intent.getStringExtra("MODE");
+				Button btnReqAlarm = (Button) findViewById(R.id.btn_req_alarm);
+				if (alarmMode.equals(AlarmState.QUIET.toString())) {
+					_deviceAlarmState = AlarmState.QUIET;
+					btnReqAlarm.setText("Manual\nAlarm");
+				} else if (alarmMode.equals(AlarmState.BEEP.toString())) {
+					_deviceAlarmState = AlarmState.BEEP;
+				} else if (alarmMode.equals(AlarmState.EMERGENCY.toString())) {
+					_deviceAlarmState = AlarmState.EMERGENCY;
+					btnReqAlarm.setText("Stop\nAlarm");
 				}
+				Logger.info("Alarm state changed: " + _deviceAlarmState.toString());
+			} else if (ProjectSidekickService.ACTION_STATE_CHANGED.equals(action)) {
+				String state = intent.getStringExtra("STATE");
+
+				TextView txvDvcState = (TextView) findViewById(R.id.txv_dvc_state);
+				txvDvcState.setText("State: " + state);
 			}
 	    }
 	};

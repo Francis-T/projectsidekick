@@ -7,7 +7,7 @@ import net.sojourner.projectsidekick.android.AndroidBluetoothLeBridge;
 import net.sojourner.projectsidekick.types.KnownDevice;
 import net.sojourner.projectsidekick.types.KnownDevice.DeviceStatus;
 import net.sojourner.projectsidekick.types.PSStatus;
-import net.sojourner.projectsidekick.types.ServiceBindingListActivity;
+import net.sojourner.projectsidekick.types.ServiceBindingActivity;
 import net.sojourner.projectsidekick.types.ServiceState;
 import net.sojourner.projectsidekick.types.SidekickListAdapter;
 import net.sojourner.projectsidekick.utils.Logger;
@@ -34,7 +34,7 @@ import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.Toast;
 
-public class AppModeActivity extends ServiceBindingListActivity {
+public class AppModeActivity extends ServiceBindingActivity {
 	public static final int MSG_RESP_SERVICE_STATE		= 1;
 
 	private ProjectSidekickApp 	_app 				= (ProjectSidekickApp) getApplication();
@@ -71,40 +71,6 @@ public class AppModeActivity extends ServiceBindingListActivity {
 					}
 				}
 		);
-		
-//		ListView listGui = getListView();
-//		listGui.setOnItemClickListener(
-//				new AdapterView.OnItemClickListener() {
-//					@Override
-//					public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-//						if (_registeredDevices == null) {
-//							Logger.err("Registered device list unavailable");
-//							return;
-//						}
-//
-//						KnownDevice kd = _registeredDevices.get(position);
-//						if (kd == null) {
-//							display("Invalid device selected");
-//							return;
-//						}
-//
-//					/* Package the device name and address */
-//						Bundle extras = new Bundle();
-//						extras.putString("DEVICE_NAME", kd.getName());
-//						extras.putString("DEVICE_ADDRESS", kd.getAddress());
-//
-//					/* Create the intent */
-//						Intent intent = new Intent(AppModeActivity.this,
-//								AppModeConfigBeaconActivity.class);
-//						intent.putExtra("DEVICE_INFO", extras);
-//
-//					/* Start the next activity */
-//						startActivity(intent);
-//
-//						return;
-//					}
-//				}
-//		);
 
 		/* Restore the old registered device list and show it in our current list */
 		if (_app == null) {
@@ -114,13 +80,9 @@ public class AppModeActivity extends ServiceBindingListActivity {
 		addRegisteredDevicesToList();
 
 		/* Create the adapter for the devices to be listed */
-//		_deviceListAdapter = new ArrayAdapter<KnownDevice>(this, android.R.layout.simple_list_item_1, _registeredDevices);
 		_deviceListAdapter = new SidekickListAdapter(this, _registeredDevices);
-		setListAdapter(_deviceListAdapter);
-
-
-		/* Invoke onCreate() on our superclass to start the service */
-		super.onCreate(savedInstanceState);
+		ListView listDevices = (ListView) findViewById(R.id.list_devices);
+		listDevices.setAdapter(_deviceListAdapter);
 
 		/* Set our local message handler for use with service queries */
 		setMessageHandler(new MessageHandler());
@@ -293,6 +255,7 @@ public class AppModeActivity extends ServiceBindingListActivity {
 		for (KnownDevice kd : _registeredDevices) {
 			if (kd.addressMatches(address)) {
 				Logger.info("Not adding duplicate entry for " + address);
+				kd.setName(name);
 				kd.setStatus(dvcStatus);
 				_deviceListAdapter.notifyDataSetChanged();
 				return;
